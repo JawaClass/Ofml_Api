@@ -1,3 +1,4 @@
+import os
 import re
 from collections import OrderedDict
 from pathlib import Path
@@ -54,6 +55,25 @@ class Repository:
 
 
 class Program:
+
+    def __init__(self, **kwargs):
+        self.registry: ConfigFile = kwargs['registry']
+        self.root: Path = kwargs['root']
+        self.name: str = self.registry['program']
+
+        self.paths = {
+            'ocd': self.root / self.registry['productdb_path'] if self.has_ocd() else None,
+            'oam': self.root / self.registry['oam_path'] if self.has_oam() else None,
+            'oap': self.root / f'kn/{self.name}/DE/2/oap' if self.has_oap() else None,
+            'oas': self.root / f'kn/{self.name}/DE/2/cat' if self.has_ocd() else None,
+            'go': self.root / f'kn/{self.name}/2' if self.has_go() else None
+        }
+
+        self.ocd: Optional[OFMLPart] = None
+        self.oam: Optional[OFMLPart] = None
+        self.go: Optional[OFMLPart] = None
+        self.oas: Optional[OFMLPart] = None
+        self.oap: Optional[OFMLPart] = None
 
     def __str__(self):
         return f'Program: {self.name}, OFML Parts: {self.ofml_parts()}'
@@ -145,25 +165,6 @@ class Program:
     def has_oas(self):
         return 'type' in self.registry and self.registry.get('cat_type', None) in ['XCF']
 
-    def __init__(self, **kwargs):
-        self.registry: ConfigFile = kwargs['registry']
-        self.root: Path = kwargs['root']
-        self.name: str = self.registry['program']
-
-        self.paths = {
-            'ocd': self.root / self.registry['productdb_path'] if self.has_ocd() else None,
-            'oam': self.root / self.registry['oam_path'] if self.has_oam() else None,
-            'oap': self.root / f'kn/{self.name}/DE/2/oap' if self.has_oap() else None,
-            'oas': self.root / f'kn/{self.name}/DE/2/cat' if self.has_ocd() else None,
-            'go': self.root / f'kn/{self.name}/2' if self.has_go() else None
-        }
-
-        self.ocd: Optional[OFMLPart] = None
-        self.oam: Optional[OFMLPart] = None
-        self.go: Optional[OFMLPart] = None
-        self.oas: Optional[OFMLPart] = None
-        self.oap: Optional[OFMLPart] = None
-
     def ofml_parts(self):
         return {
             'ocd': {'features': self.has_ocd(), 'loaded': bool(self.ocd)},
@@ -235,7 +236,7 @@ class OFMLPart:
         self.tables_definitions = kwargs['tables_definitions']
         encoding = kwargs.get('encoding', 'ANSI')
 
-        self.tables: Dict[str, pd.DataFrame] = OrderedDict()
+        self.tables: Dict[str, Table] = OrderedDict()
 
         for table in self.tables_definitions.keys():
 
@@ -250,16 +251,30 @@ class OFMLPart:
             table = re.sub(r'\..+$', '', table)
             self.tables[table] = read_table(table_path, columns, dtypes, encoding)
 
-    def table(self, table: str) -> pd.DataFrame:
-        table = re.sub(r'\..+$', '', table)
-        return self.tables[table]
+    def table(self, name: str) -> pd.DataFrame:
+        name = re.sub(r'\..+$', '', name)
+        return self.tables[name].df
 
 
 def read_table(filepath, names, dtype, encoding):
     """
     given a filepath and the names from inp_descr read any table
     """
-    return pd.read_csv(filepath, sep=';', header=None, names=names, dtype=dtype, encoding=encoding, comment='#')
+
+    file_attributes = os.stat(filepath)
+
+    timestamp = file_attributes.st_mtime
+    df = pd.read_csv(filepath, sep=';', header=None, names=names, dtype=dtype, encoding=encoding, comment='#')
+
+    return Table(df, filepath, timestamp)
+
+
+class Table:
+
+    def __init__(self, df, filepath, timestamp):
+        self.df = df
+        self.filepath = filepath
+        self.timestamp = timestamp
 
 
 def ofml_dtype_2_pandas_dtype(ofml_dtype):

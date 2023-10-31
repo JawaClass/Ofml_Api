@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from repository import Repository
 
 repo = Repository(Path(r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics'))
