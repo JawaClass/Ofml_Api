@@ -1,12 +1,12 @@
 from pathlib import Path
 
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler, RegexMatchingEventHandler
 from watchdog.observers import Observer
 
 from repository import Repository
 
 
-class LiveRepository(Repository, FileSystemEventHandler):
+class LiveRepository(Repository, RegexMatchingEventHandler):
 
     def __init__(self, root: Path, **kwargs):
         super().__init__(root, **kwargs)
