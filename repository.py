@@ -16,13 +16,19 @@ def catch_file_exception(f):
     def wrapper(*args, **kwargs):
         try:
             result = f(*args, **kwargs)
-        except (OSError, IOError):
-            result = None
-            print('catch_file_exception', args, kwargs)
-            input('.')
+        except (OSError, IOError) as e:
+            print('.......catch_file_exception', args, kwargs)
+            return NotAvailable(e)
+            # input('.')
         return result
 
     return wrapper
+
+
+class NotAvailable:
+
+    def __init__(self, error):
+        self.error = error
 
 
 class Repository:
@@ -128,6 +134,21 @@ class Program:
             self.load_oap()
         if ofml_part == 'oas':
             self.load_oas()
+
+    def is_ocd_available(self):
+        return type(self.ocd) is not NotAvailable
+
+    def is_oam_available(self):
+        return type(self.oam) is not NotAvailable
+
+    def is_oas_available(self):
+        return type(self.oas) is not NotAvailable
+
+    def is_go_available(self):
+        return type(self.go) is not NotAvailable
+
+    def is_oap_available(self):
+        return type(self.oap) is not NotAvailable
 
     def load_ocd(self):
         self.read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr')
@@ -267,6 +288,8 @@ class OFMLPart:
     @staticmethod
     def from_inp_descr(inp_descr_path):
         tables_definitions = read_pdata_inp_descr(inp_descr_path)
+        if isinstance(tables_definitions, NotAvailable):
+            return tables_definitions
         path = inp_descr_path.parents[0]
         return OFMLPart(path=path, tables_definitions=tables_definitions)
 
@@ -298,6 +321,7 @@ class OFMLPart:
         return f'OFMLPart name = {self.name}'
 
     def read_table(self, table, encoding='ANSI'):
+        # print('read_table', table)
         table_path = self.path / table
         columns, dtypes = self.tables_definitions[table]
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
@@ -309,6 +333,9 @@ class OFMLPart:
         name = re.sub(r'\..+$', '', name)
         return self.tables[name]
 
+    def is_table_available(self, name):
+        return type(self.table(name)) is not NotAvailable
+
     def __getitem__(self, item):
         return self.table(item)
 
@@ -317,9 +344,10 @@ def read_table(filepath, names, dtype, encoding):
     """
     given a filepath and the names from inp_descr read any table
     """
-
-    df = pd.read_csv(filepath, sep=';', header=None, names=names, dtype=dtype, encoding=encoding, comment='#')
-
+    try:
+        df = pd.read_csv(filepath, sep=';', header=None, names=names, dtype=dtype, encoding=encoding, comment='#')
+    except ValueError as e:
+        return NotAvailable(e)
     return Table(df, filepath)
 
 
@@ -344,10 +372,10 @@ def read_pdata_inp_descr(file_name):
 
             row = line.split()
 
-            if row[0] == 'commend':
+            if row[0] == 'comment':
                 inside_comment = True
 
-            if row[0] == 'end commend':
+            if len(row) >= 2 and f'{row[0]} {row[1]}' == 'end comment':
                 inside_comment = False
 
             if inside_comment:

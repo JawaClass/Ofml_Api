@@ -6,3 +6,5 @@ venv/
 
 # Ignore JetBrains folder
 .idea/
+
+ofml.db

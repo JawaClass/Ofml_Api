@@ -1,13 +1,19 @@
+import asyncio
 import threading
 import time
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional
+
+import websocket
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileSystemEvent
 from watchdog.observers import Observer
 
 from db import DB
-from repository import Repository, Program, OFMLPart, read_pdata_inp_descr
+from repository import Repository, Program, OFMLPart, read_pdata_inp_descr, NotAvailable
 import logging
+
+from ws_server import send_message
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -46,6 +52,34 @@ class FileSystemEventHandlerSingleEvent(FileSystemEventHandler):
 
 class LiveOFMLPart(OFMLPart, FileSystemEventHandlerSingleEvent):
 
+    @staticmethod
+    def from_inp_descr(**kwargs):
+        print('from_inp_descr....', kwargs)
+        inp_descr_path = kwargs['inp_descr_path']
+        callback = kwargs['callback']
+        program = kwargs['program']
+        tables_definitions = read_pdata_inp_descr(inp_descr_path)
+
+        print('tables_definitions', tables_definitions)
+
+        if isinstance(tables_definitions, NotAvailable):
+            return tables_definitions
+
+        path = inp_descr_path.parents[0]
+        return LiveOFMLPart(path=path, tables_definitions=tables_definitions, callback=callback, program=program)
+
+    @staticmethod
+    def from_tables_definitions(**kwargs):
+        path: Path = kwargs['path']
+        callback = kwargs['callback']
+        tables_definitions = kwargs['tables_definitions']
+        program = kwargs['program']
+
+        if not path.exists():
+            return NotAvailable(None)
+
+        return LiveOFMLPart(path=path, tables_definitions=tables_definitions, callback=callback, program=program)
+
     def __init__(self, callback, **kwargs):
 
         FileSystemEventHandlerSingleEvent.__init__(self)
@@ -57,25 +91,15 @@ class LiveOFMLPart(OFMLPart, FileSystemEventHandlerSingleEvent):
 
         self._ignore_event_tables = set()
 
-    @staticmethod
-    def from_inp_descr(**kwargs):
-        inp_descr_path = kwargs['inp_descr_path']
-        callback = kwargs['callback']
-        program = kwargs['program']
-        tables_definitions = read_pdata_inp_descr(inp_descr_path)
-        path = inp_descr_path.parents[0]
-        return LiveOFMLPart(path=path, tables_definitions=tables_definitions, callback=callback, program=program)
-
-    @staticmethod
-    def from_tables_definitions(**kwargs):
-        path = kwargs['path']
-        callback = kwargs['callback']
-        tables_definitions = kwargs['tables_definitions']
-        program = kwargs['program']
-
-        print(kwargs)
-
-        return LiveOFMLPart(path=path, tables_definitions=tables_definitions, callback=callback, program=program)
+    def init_tables(self):
+        print('init_table')
+        print('filenames', self.filenames)
+        for table_name in self.filenames:
+            self.update_table(table_name)
+            print(table_name)
+            if self.is_table_available(table_name):
+                print('table', table_name, 'available')
+                self.on_change(filename=table_name, ofml_part=self, event=None)
 
     def update_table(self, table_name):
         # reading the table will trigger a modification event we will ignore
@@ -109,9 +133,15 @@ class LiveProgram(Program):
     def __init__(self, callback, observer, **kwargs):
         super().__init__(**kwargs)
 
-        # self.on_program_change = callback
         self._observer = observer
-        # self._observer.schedule(self, path=self.program_path, recursive=False)
+
+        self.ocd: Optional[LiveOFMLPart] = None
+        self.oam: Optional[LiveOFMLPart] = None
+        self.go: Optional[LiveOFMLPart] = None
+        self.oas: Optional[LiveOFMLPart] = None
+        self.oap: Optional[LiveOFMLPart] = None
+
+        self.callback = callback
 
     def on_ofml_part_change(self, filename, ofml_part: LiveOFMLPart, event):
         print('ofml_part_change', filename, self.name, ofml_part, event)
@@ -132,8 +162,28 @@ class LiveProgram(Program):
             except sqlite3.OperationalError:
                 pass
         print(f'START: inserting {sql_table_name} of {self.name}')
+
+        # print('DF_COLUMNS', table.df.columns)
+        #
+        # with DB as db:
+        #     c = db.cursor()
+        #     import sqlite3
+        #     rt = c.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{sql_table_name}';")
+        #     if rt.fetchone():
+        #
+        #         rt = c.execute(f"PRAGMA table_info([{sql_table_name}]);")
+        #         print('PRAGMA....', rt.fetchall())
+        #         for column in rt.fetchall():
+        #             column_name = column[1]
+        #
+        # # if table exists in DB
+        # #   for c in df_columns:
+        # #       if c not in table_schema:
+        # #           DB_table add column c
+
         table.df.to_sql(sql_table_name, DB, if_exists='append', method='multi', chunksize=1000)
         print(f'DONE: inserting {sql_table_name} of {self.name}')
+        self.callback(filename, ofml_part, event)
 
     def read_ofml_part(self, **kwargs):
 
@@ -165,6 +215,12 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
     # def dispatch(self, event):
     #     print('LiveRepository . dispatch', event)
 
+    def on_callback(self, *args, **kwargs):
+        print('LiveRepository :: on_callback', args, kwargs)
+        # ws_send('ws111111111111111111111')
+        asyncio.run(send_message('wsssssssssssssssssssssssssssssss'))
+        print('SENT !!!')
+
     def load_program(self, program, keep_in_memory=False):
         if keep_in_memory:
 
@@ -172,14 +228,14 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
                 return self.__programs[program]
             else:
                 reg = self.read_registry(program)
-                self.__programs[program] = LiveProgram(registry=reg, root=self.root, callback=None,
+                self.__programs[program] = LiveProgram(registry=reg, root=self.root, callback=self.on_callback,
                                                        observer=Observer())
             return self.__programs[program]
 
         else:
 
             reg = self.read_registry(program)
-            return LiveProgram(registry=reg, root=self.root, callback=None,
+            return LiveProgram(registry=reg, root=self.root, callback=self.on_callback,
                                observer=Observer())
 
     def __init__(self, root: Path, **kwargs):
@@ -192,32 +248,43 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
 
         self.read_profiles()
 
-        self._watched_files = set()
-        self._watched_file2program = {}
-
         for name in self.program_names():
 
-            # if not name == 'desks_m_cat':
-            #     continue
+            if not name == 'talos':
+                continue
 
             program: LiveProgram = self.load_program(name, keep_in_memory=False)
 
             if program.has_ocd():
-                print('load_ocd', name, program)
                 program.load_ocd()
-                for table_name in program.ocd.tables:
-                    program.ocd.update_table(table_name)  # LiveOFMLPart
-                    program.on_ofml_part_change(filename=table_name, ofml_part=program.ocd, event=None)
+                # if program.is_ocd_available():
+                #     program.ocd.init_tables()
 
             if program.has_oas():
-                # print('load_oas', name, program)
                 program.load_oas()
+                # if program.is_oas_available():
+                #     program.oas.init_tables()
 
             if program.has_oam():
-                # print('load_oas', name, program)
-
                 program.load_oam()
+                # if program.is_oam_available():
+                #     program.oam.init_tables()
 
+            if program.has_oap():
+                program.load_oap()
+                # if program.is_oap_available():
+                #     program.oap.init_tables()
+
+            if program.has_go():
+                program.load_go()
+                # if program.is_go_available():
+                #     program.go.init_tables()
+
+
+# with DB as db:
+#     db.execute("ALTER TABLE [oap_propedit.csv] ADD COLUMN staterestr TEXT;")
+#     db.commit()
+#     input('..')
 
 PATH = Path(r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics')
 live_repo = LiveRepository(root=PATH)
