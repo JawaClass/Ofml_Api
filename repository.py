@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Dict
@@ -11,16 +12,32 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.NOTSET)
 
 
+def catch_file_exception(f):
+    def wrapper(*args, **kwargs):
+        try:
+            result = f(*args, **kwargs)
+        except (OSError, IOError):
+            result = None
+            print('catch_file_exception', args, kwargs)
+            input('.')
+        return result
+
+    return wrapper
+
+
 class Repository:
 
     def __init__(self, root: Path, **kwargs):
         self.root = root
 
-        self.profiles = ConfigFile(self.root / 'profiles' / 'kn.cfg')
+        self.profiles = None
         self.__programs = OrderedDict()
 
     def __getitem__(self, program):
         return self.load_program(program)
+
+    def read_profiles(self):
+        self.profiles = ConfigFile(self.root / 'profiles' / 'kn.cfg')
 
     def read_registry(self, program):
         registry_name = self.program_name2registry_name(program)
@@ -61,12 +78,14 @@ class Program:
         self.root: Path = kwargs['root']
         self.name: str = self.registry['program']
 
+        self.program_path = self.root / 'kn' / self.name
+
         self.paths = {
             'ocd': self.root / self.registry['productdb_path'] if self.has_ocd() else None,
             'oam': self.root / self.registry['oam_path'] if self.has_oam() else None,
-            'oap': self.root / f'kn/{self.name}/DE/2/oap' if self.has_oap() else None,
-            'oas': self.root / f'kn/{self.name}/DE/2/cat' if self.has_ocd() else None,
-            'go': self.root / f'kn/{self.name}/2' if self.has_go() else None
+            'oap': self.program_path / 'DE' / '2' / 'oap' if self.has_oap() else None,
+            'oas': self.program_path / 'DE' / '2' / 'cat' if self.has_oas() else None,
+            'go': self.program_path / '2' if self.has_go() else None
         }
 
         self.ocd: Optional[OFMLPart] = None
@@ -87,20 +106,16 @@ class Program:
         tables_definitions = kwargs.get('tables_definitions', None)
 
         assert inp_descr is None or tables_definitions is None
+        assert inp_descr is not None or tables_definitions is not None
 
         ofml_part = kwargs['ofml_part']
 
-        try:
+        if inp_descr:
+            self.__setattr__(ofml_part, OFMLPart.from_inp_descr(inp_descr))
 
-            if inp_descr:
-                self.__setattr__(ofml_part, OFMLPart.from_inp_descr(inp_descr))
-
-            else:
-                path = kwargs['path']
-                self.__setattr__(ofml_part, OFMLPart.from_tables_definitions(tables_definitions, path))
-
-        except (FileNotFoundError, ValueError) as e:
-            logger.info(f'{ofml_part} from {self.name} could not successfully been read: {e}')
+        else:
+            path = kwargs['path']
+            self.__setattr__(ofml_part, OFMLPart.from_tables_definitions(tables_definitions, path))
 
     def load_ofml_part(self, ofml_part):
         if ofml_part == 'ocd':
@@ -143,10 +158,6 @@ class Program:
 
         })
 
-        # article.csv --- "RXAPLATTE";default;0;;S;15;::kn::regalsystem
-        # ressource.csv --- "RXAPLATTE";default;;IT;"RXAPLATTE.jpg"
-        # structure.csv --- @FOLDER1;default;1;F;
-        # text.csv --- "RXAPLATTE";default;de;"Arbeitsplatte"
         self.read_ofml_part(ofml_part='oas', tables_definitions=tables_definitions, path=path)
 
     def has_ocd(self):
@@ -178,9 +189,34 @@ class Program:
         return [_ for _, v in self.ofml_parts().items() if v['features'] is True]
 
 
-class ConfigFile:
+class TimestampFile:
 
-    def __init__(self, path: Path, **kwargs):
+    def __init__(self, path):
+        self.path = path
+        self._file_attributes = os.stat(self.path)
+        self.timestamp_read = time.time()
+
+    def __str__(self):
+        return f'TimestampFile: path={self.path}, timestamp_modified={self.timestamp_modified}, timestamp_read={self.timestamp_read}'
+
+    def __repr__(self):
+        return self.__str__()
+
+    @property
+    def timestamp_modified(self) -> float:
+        return self._file_attributes.st_mtime
+
+    def is_newer(self, other: 'TimestampFile'):
+        return self.timestamp_modified > other.timestamp_modified
+
+    def is_older(self, other: 'TimestampFile'):
+        return self.timestamp_modified < other.timestamp_modified
+
+
+class ConfigFile(TimestampFile):
+
+    def __init__(self, path: Path):
+        super().__init__(path)
         self.path = path
         self.config = self.read()
 
@@ -215,6 +251,14 @@ class ConfigFile:
         return d
 
 
+class Table(TimestampFile):
+
+    def __init__(self, df: pd.DataFrame, filepath: Path):
+        super().__init__(filepath)
+        self.df: pd.DataFrame = df
+        self.name = filepath.name
+
+
 class OFMLPart:
     """
     this class is for reading any ofml data
@@ -231,29 +275,42 @@ class OFMLPart:
         return OFMLPart(path=path, tables_definitions=tables_definitions)
 
     def __init__(self, **kwargs):
-
-        self.path = kwargs['path']
+        self.path: Path = kwargs['path']
+        self.name = {
+            'db': 'ocd',
+            'oap': 'oap',
+            'oam': 'oam',
+            '2': 'go',
+            'cat': 'oas',
+        }[self.path.name]
         self.tables_definitions = kwargs['tables_definitions']
-        encoding = kwargs.get('encoding', 'ANSI')
-
         self.tables: Dict[str, Table] = OrderedDict()
 
-        for table in self.tables_definitions.keys():
+    @property
+    def filepaths(self):
+        return {self.path / _ for _ in self.tables_definitions.keys()}
 
-            if kwargs.get('subset') is not None:
-                if table not in kwargs['subset']:
-                    continue
+    @property
+    def filenames(self):
+        return {_ for _ in self.tables_definitions.keys()}
 
-            table_path = self.path / table
-            columns, dtypes = self.tables_definitions[table]
-            dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
+    def __repr__(self):
+        return f'OFMLPart name = {self.name}'
 
-            table = re.sub(r'\..+$', '', table)
-            self.tables[table] = read_table(table_path, columns, dtypes, encoding)
+    def read_table(self, table, encoding='ANSI'):
+        table_path = self.path / table
+        columns, dtypes = self.tables_definitions[table]
+        dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
 
-    def table(self, name: str) -> pd.DataFrame:
+        table = re.sub(r'\..+$', '', table)
+        self.tables[table] = read_table(table_path, columns, dtypes, encoding)
+
+    def table(self, name: str) -> Table:
         name = re.sub(r'\..+$', '', name)
-        return self.tables[name].df
+        return self.tables[name]
+
+    def __getitem__(self, item):
+        return self.table(item)
 
 
 def read_table(filepath, names, dtype, encoding):
@@ -261,20 +318,9 @@ def read_table(filepath, names, dtype, encoding):
     given a filepath and the names from inp_descr read any table
     """
 
-    file_attributes = os.stat(filepath)
-
-    timestamp = file_attributes.st_mtime
     df = pd.read_csv(filepath, sep=';', header=None, names=names, dtype=dtype, encoding=encoding, comment='#')
 
-    return Table(df, filepath, timestamp)
-
-
-class Table:
-
-    def __init__(self, df, filepath, timestamp):
-        self.df = df
-        self.filepath = filepath
-        self.timestamp = timestamp
+    return Table(df, filepath)
 
 
 def ofml_dtype_2_pandas_dtype(ofml_dtype):
@@ -286,6 +332,7 @@ def ofml_dtype_2_pandas_dtype(ofml_dtype):
     return ofml_dtype
 
 
+@catch_file_exception
 def read_pdata_inp_descr(file_name):
     result = OrderedDict()
     inside_comment = False
