@@ -1,19 +1,13 @@
-import threading
-
+import asyncio
+import json
+from datetime import datetime
+import websocket
 import pandas as pd
 import streamlit as st
 from db import DB
+import threading
 
-# from websockets.sync.client import connect
-#
-# def hello():
-#     with connect("ws://localhost:8765") as websocket:
-#         websocket.send("Hello world!")
-#         message = websocket.recv()
-#         print(f"Received: {message}")
-
-# hello()
-from ws_client import ws_listen_as_client
+print('- rerurn', threading.current_thread().name, threading.current_thread().ident, id(threading.current_thread()))
 
 
 def ws_on_open(*args, **kwargs):
@@ -26,14 +20,19 @@ def ws_on_close(*args, **kwargs):
 
 def ws_on_message(*args, **kwargs):
     print('WEB :: ws_on_message', args, kwargs)
+    message = args[1]
+    message = json.loads(message)
+    print(message)
+    st.toast(f'Aktualisiert: {message["program"]}, {message["ofml_part"]}, {message["table"]}')
+
+    print('rerun?')
+
+    st.rerun()
 
 
-ws_client_thread = threading.Thread(target=ws_listen_as_client,
-                                    args=(ws_on_open,
-                                          ws_on_message,
-                                          ws_on_close))
+def ws_on_error(*args, **kwargs):
+    print('WEB :: ws_on_error', args, kwargs)
 
-ws_client_thread.start()
 
 # extend the streamlit browser container window default is 48rem
 css = '''
@@ -52,14 +51,60 @@ def db_connection():
     return DB
 
 
+def get_ofml_features(program_name):
+    sql_ocd = f"SELECT 1 FROM [ocd_article.csv] WHERE __sql__program__='{program_name}';"
+    sql_oas = f"SELECT 1 FROM [article.csv] WHERE __sql__program__='{program_name}';"
+    sql_oam = f"SELECT 1 FROM [oam_article2ofml.csv] WHERE __sql__program__='{program_name}';"
+    sql_oap = f"SELECT 1 FROM [oap_type.csv] WHERE __sql__program__='{program_name}';"
+    sql_go = f"SELECT 1 FROM [go_articles.csv] WHERE __sql__program__='{program_name}';"
+
+    with db_connection() as db:
+        crx = db.cursor()
+        crx.execute(sql_ocd)
+        has_ocd = bool(crx.fetchone())
+
+        crx.execute(sql_oas)
+        has_oas = bool(crx.fetchone())
+
+        crx.execute(sql_oam)
+        has_oam = bool(crx.fetchone())
+
+        crx.execute(sql_oap)
+        has_oap = bool(crx.fetchone())
+
+        crx.execute(sql_go)
+        has_go = bool(crx.fetchone())
+
+    return {
+        'OCD': has_ocd,
+        'OAS': has_oas,
+        'OAM': has_oam,
+        'OAP': has_oap,
+        'GO': has_go,
+    }
+
+
 with st.sidebar:
+    waiting_symbol = st.container()
+
     sql_all_programs = "SELECT DISTINCT __sql__program__ FROM [ocd_article.csv];"
     with db_connection() as db:
         crx = db.cursor()
         crx.execute(sql_all_programs)
         all_programs = [_[0] for _ in crx.fetchall()]
-        for program_name in all_programs:
-            st.markdown(program_name)
+
+    st.markdown('# Programmserien:')
+    for i, program_name in enumerate(all_programs):
+        with st.expander(f'**{i+1}** {program_name}'):
+            # st.markdown('OCD  :check_mark_button:')
+            # st.markdown('OAM  :check_mark_button:')
+            # st.markdown('OAS  :check_mark_button:')
+            # st.markdown('OAP  :check_mark_button:')
+            # st.markdown('GO  :check_mark_button:')
+            features = get_ofml_features(program_name)
+            st.write(features)
+
+
 # with db_connection() as db:
 #     c = db.cursor()
 #     c.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -87,19 +132,19 @@ def default_sql_commands():
             'article.csv': "SELECT * FROM [article.csv]",
             'text.csv': "SELECT * FROM [text.csv]",
         },
-        'OAM': {
-            'oam_article2ofml.csv': "SELECT * FROM [oam_article2ofml.csv]",
-            'oam_article2odbparams.csv': "SELECT * FROM [oam_article2odbparams.csv]",
-        },
-        'OAP': {
-            'oap_metatype2type.csv': "SELECT * FROM [oap_metatype2type.csv]",
-            'oap_article2type.csv': "SELECT * FROM [oap_article2type.csv]",
-            'oap_propedit.csv': "SELECT * FROM [oap_propedit.csv]",
-        },
-        'GO': {
-            'go_types.csv': "SELECT * FROM [go_types.csv]",
-            'go_articles.csv': "SELECT * FROM [go_articles.csv]",
-        },
+        # 'OAM': {
+        #     'oam_article2ofml.csv': "SELECT * FROM [oam_article2ofml.csv]",
+        #     'oam_article2odbparams.csv': "SELECT * FROM [oam_article2odbparams.csv]",
+        # },
+        # 'OAP': {
+        #     'oap_metatype2type.csv': "SELECT * FROM [oap_metatype2type.csv]",
+        #     'oap_article2type.csv': "SELECT * FROM [oap_article2type.csv]",
+        #     'oap_propedit.csv': "SELECT * FROM [oap_propedit.csv]",
+        # },
+        # 'GO': {
+        #     'go_types.csv': "SELECT * FROM [go_types.csv]",
+        #     'go_articles.csv': "SELECT * FROM [go_articles.csv]",
+        # },
     }
 
 
@@ -123,7 +168,7 @@ with HEADER:
 with OCD:
     if has_query:
         st.session_state['sql_commands']['OCD'][
-            'ocd_article.csv'] = f"SELECT * FROM [ocd_article.csv] WHERE article_nr LIKE '{query_article}' AND __sql__program__ LIKE '{query_program}';"
+            'ocd_article.csv'] = f"SELECT * FROM [ocd_article.csv] WHERE article_nr LIKE '{query_article}';"
 
         st.session_state['sql_commands']['OCD'][
             'ocd_propertyclass.csv'] = f"SELECT * FROM [ocd_propertyclass.csv] WHERE article_nr LIKE '{query_article}';"
@@ -137,6 +182,7 @@ with OCD:
     for table_name, sql in st.session_state['sql_commands']['OCD'].items():
         df = pd.read_sql(sql, DB)
         st.write(f'{table_name} | {df.shape[0]} Einträge')
+        st.write(sql)
         st.write(df)
 
 with OAS:
@@ -153,44 +199,77 @@ with OAS:
         # st.write(sql)
         st.write(df)
 
-with OAM:
-    if query_article:
-        st.session_state['sql_commands']['OAM'][
-            'oam_article2ofml.csv'] = f"SELECT * FROM [oam_article2ofml.csv] WHERE article LIKE '{query_article}';"
+# with OAM:
+#     if query_article:
+#         st.session_state['sql_commands']['OAM'][
+#             'oam_article2ofml.csv'] = f"SELECT * FROM [oam_article2ofml.csv] WHERE article LIKE '{query_article}';"
+#
+#         st.session_state['sql_commands']['OAM'][
+#             'oam_article2odbparams.csv'] = f"SELECT * FROM [oam_article2odbparams.csv] WHERE article LIKE '{query_article}';"
+#
+#     for table_name, sql in st.session_state['sql_commands']['OAM'].items():
+#         df = pd.read_sql(sql, DB)
+#         st.write(f'{table_name} | {df.shape[0]} Einträge')
+#         # st.write(sql)
+#         st.write(df)
+#
+# with OAP:
+#     # if query_article:
+#     #     st.session_state['sql_commands']['OAP'][
+#     #         'oap_metatype2type.csv'] = f"SELECT * FROM [oam_article2ofml.csv] WHERE article LIKE '{query_article}';"
+#     #
+#     #     st.session_state['sql_commands']['OAM'][
+#     #         'oap_article2type.csv'] = f"SELECT * FROM [oap_article2type.csv] WHERE article LIKE '{query_article}';"
+#
+#     for table_name, sql in st.session_state['sql_commands']['OAP'].items():
+#         df = pd.read_sql(sql, DB)
+#         st.write(f'{table_name} | {df.shape[0]} Einträge')
+#         # st.write(sql)
+#         st.write(df)
+#
+# with GO:
+#     # if query_article:
+#     #     st.session_state['sql_commands']['OAP'][
+#     #         'oap_metatype2type.csv'] = f"SELECT * FROM [oam_article2ofml.csv] WHERE article LIKE '{query_article}';"
+#     #
+#     #     st.session_state['sql_commands']['OAM'][
+#     #         'oap_article2type.csv'] = f"SELECT * FROM [oap_article2type.csv] WHERE article LIKE '{query_article}';"
+#
+#     for table_name, sql in st.session_state['sql_commands']['GO'].items():
+#         df = pd.read_sql(sql, DB)
+#         st.write(f'{table_name} | {df.shape[0]} Einträge')
+#         # st.write(sql)
+#         st.write(df)
 
-        st.session_state['sql_commands']['OAM'][
-            'oam_article2odbparams.csv'] = f"SELECT * FROM [oam_article2odbparams.csv] WHERE article LIKE '{query_article}';"
 
-    for table_name, sql in st.session_state['sql_commands']['OAM'].items():
-        df = pd.read_sql(sql, DB)
-        st.write(f'{table_name} | {df.shape[0]} Einträge')
-        # st.write(sql)
-        st.write(df)
+#####################
+test = st.empty()
 
-with OAP:
-    # if query_article:
-    #     st.session_state['sql_commands']['OAP'][
-    #         'oap_metatype2type.csv'] = f"SELECT * FROM [oam_article2ofml.csv] WHERE article LIKE '{query_article}';"
-    #
-    #     st.session_state['sql_commands']['OAM'][
-    #         'oap_article2type.csv'] = f"SELECT * FROM [oap_article2type.csv] WHERE article LIKE '{query_article}';"
 
-    for table_name, sql in st.session_state['sql_commands']['OAP'].items():
-        df = pd.read_sql(sql, DB)
-        st.write(f'{table_name} | {df.shape[0]} Einträge')
-        # st.write(sql)
-        st.write(df)
+async def watch(test):
+    while True:
+        test.markdown(
+            f"""
+            <p class="time">
+                {str(datetime.now())}
+            </p>
+            """, unsafe_allow_html=True)
+        await asyncio.sleep(1)
 
-with GO:
-    # if query_article:
-    #     st.session_state['sql_commands']['OAP'][
-    #         'oap_metatype2type.csv'] = f"SELECT * FROM [oam_article2ofml.csv] WHERE article LIKE '{query_article}';"
-    #
-    #     st.session_state['sql_commands']['OAM'][
-    #         'oap_article2type.csv'] = f"SELECT * FROM [oap_article2type.csv] WHERE article LIKE '{query_article}';"
 
-    for table_name, sql in st.session_state['sql_commands']['GO'].items():
-        df = pd.read_sql(sql, DB)
-        st.write(f'{table_name} | {df.shape[0]} Einträge')
-        # st.write(sql)
-        st.write(df)
+def listen_ws_now():
+    print('create new ws!')
+    url = "ws://127.0.0.1:7890"
+    ws = websocket.WebSocketApp(url,
+                                on_close=ws_on_close,
+                                on_error=ws_on_error,
+                                on_open=ws_on_open,
+                                on_message=ws_on_message)
+
+    ws.run_forever()
+
+
+if 'ws' not in st.session_state:
+    listen_ws_now()
+    st.session_state['ws'] = 1
+# asyncio.run(watch(test))

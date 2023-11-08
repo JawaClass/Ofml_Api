@@ -150,7 +150,7 @@ class Program:
     def is_oap_available(self):
         return type(self.oap) is not NotAvailable
 
-    def load_ocd(self):
+    async def load_ocd(self):
         self.read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr')
 
     def load_oam(self):
@@ -344,9 +344,17 @@ def read_table(filepath, names, dtype, encoding):
     """
     given a filepath and the names from inp_descr read any table
     """
+    on_bad_lines = 'warn'  # warn, skip, error
     try:
-        df = pd.read_csv(filepath, sep=';', header=None, names=names, dtype=dtype, encoding=encoding, comment='#')
+        df = pd.read_csv(filepath, sep=';',
+                         header=None,
+                         names=names,
+                         dtype=dtype,
+                         encoding=encoding,
+                         comment='#',
+                         on_bad_lines=on_bad_lines)
     except ValueError as e:
+        print('read_table ERR', e)
         return NotAvailable(e)
     return Table(df, filepath)
 

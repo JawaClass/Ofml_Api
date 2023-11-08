@@ -1,11 +1,10 @@
 import asyncio
-import threading
+import json
 import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-import websocket
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileSystemEvent
 from watchdog.observers import Observer
 
@@ -13,7 +12,7 @@ from db import DB
 from repository import Repository, Program, OFMLPart, read_pdata_inp_descr, NotAvailable
 import logging
 
-from ws_server import send_message
+from ws_server import notify_clients, start_server_in_thread
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -45,8 +44,10 @@ class FileSystemEventHandlerSingleEvent(FileSystemEventHandler):
         threshold = 0.2
         is_duplicate = (last_time is not None and time_delta < threshold)
         if is_duplicate:
+            # print('Duplicate', event, 'last_time=', last_time)
             return
-
+        # else:
+        #     print('Dispatch', event, 'last_time=', last_time)
         super().dispatch(event)
 
 
@@ -91,7 +92,7 @@ class LiveOFMLPart(OFMLPart, FileSystemEventHandlerSingleEvent):
 
         self._ignore_event_tables = set()
 
-    def init_tables(self):
+    async def init_tables(self):
         print('init_table')
         print('filenames', self.filenames)
         for table_name in self.filenames:
@@ -99,7 +100,7 @@ class LiveOFMLPart(OFMLPart, FileSystemEventHandlerSingleEvent):
             print(table_name)
             if self.is_table_available(table_name):
                 print('table', table_name, 'available')
-                self.on_change(filename=table_name, ofml_part=self, event=None)
+                await self.on_change(filename=table_name, ofml_part=self, event=None)
 
     def update_table(self, table_name):
         # reading the table will trigger a modification event we will ignore
@@ -122,9 +123,10 @@ class LiveOFMLPart(OFMLPart, FileSystemEventHandlerSingleEvent):
 
         try:
             self.update_table(filename)
-            self.on_change(filename=filename, ofml_part=self, event=event)
+            if type(self.table(filename)) is not NotAvailable:
+                self.on_change(filename=filename, ofml_part=self, event=event)
         except PermissionError:
-            logger.warning(f'PermissionError: could not update table {self.filenames} of {self.name}')
+            logger.warning(f'PermissionError: could not update table {filename} of {self.name}')
             pass
 
 
@@ -183,7 +185,7 @@ class LiveProgram(Program):
 
         table.df.to_sql(sql_table_name, DB, if_exists='append', method='multi', chunksize=1000)
         print(f'DONE: inserting {sql_table_name} of {self.name}')
-        self.callback(filename, ofml_part, event)
+        self.callback(self, ofml_part, filename, event)
 
     def read_ofml_part(self, **kwargs):
 
@@ -218,10 +220,20 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
     def on_callback(self, *args, **kwargs):
         print('LiveRepository :: on_callback', args, kwargs)
         # ws_send('ws111111111111111111111')
-        asyncio.run(send_message('wsssssssssssssssssssssssssssssss'))
-        print('SENT !!!')
 
-    def load_program(self, program, keep_in_memory=False):
+        message = json.dumps({
+            'COMMAND': 'update',
+            'program': args[0].name,
+            'ofml_part': args[1].name,
+            'table': args[2],
+        })
+
+        # notify_clients(message)
+        asyncio.run(notify_clients(message))
+        print('SENT !!!')
+        print('message', message)
+
+    async def load_program(self, program, keep_in_memory=False):
         if keep_in_memory:
 
             if program in self.__programs:
@@ -238,7 +250,27 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
             return LiveProgram(registry=reg, root=self.root, callback=self.on_callback,
                                observer=Observer())
 
-    def __init__(self, root: Path, **kwargs):
+    @classmethod
+    async def create(cls, root: Path):
+        repo = LiveRepository(root)
+
+        for name in repo.program_names():
+
+            if name not in ['talos', 's6', 'desks_m_cat']:  # 's6',
+                continue
+
+            program: LiveProgram = await repo.load_program(name, keep_in_memory=False)
+
+            if program.has_ocd():
+                print('load ocd')
+                await program.load_ocd()
+
+                # if program.is_ocd_available():
+                #     await program.ocd.init_tables()
+
+        return repo
+
+    def __init__(self, root: Path):
         # super().__init__(root, **kwargs)
 
         FileSystemEventHandlerSingleEvent.__init__(self)
@@ -248,37 +280,42 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
 
         self.read_profiles()
 
-        for name in self.program_names():
+        # !!!!!!!!!!!!
+        ###start_server_in_thread()
 
-            if not name == 'talos':
-                continue
+        # for name in self.program_names():
+        #
+        #     # if name not in ['talos', 's6', 'desks_m_cat']:  # 's6',
+        #     #     continue
+        #
+        #     program: LiveProgram = self.load_program(name, keep_in_memory=False)
+        #
+        #     if program.has_ocd():
+        #         print('load ocd')
+        #         await program.load_ocd()
 
-            program: LiveProgram = self.load_program(name, keep_in_memory=False)
+        # if program.is_ocd_available():
+        #     program.ocd.init_tables()
 
-            if program.has_ocd():
-                program.load_ocd()
-                # if program.is_ocd_available():
-                #     program.ocd.init_tables()
-
-            if program.has_oas():
-                program.load_oas()
-                # if program.is_oas_available():
-                #     program.oas.init_tables()
-
-            if program.has_oam():
-                program.load_oam()
-                # if program.is_oam_available():
-                #     program.oam.init_tables()
-
-            if program.has_oap():
-                program.load_oap()
-                # if program.is_oap_available():
-                #     program.oap.init_tables()
-
-            if program.has_go():
-                program.load_go()
-                # if program.is_go_available():
-                #     program.go.init_tables()
+        # if program.has_oas():
+        #     program.load_oas()
+        #     if program.is_oas_available():
+        #         program.oas.init_tables()
+        #
+        # if program.has_oam():
+        #     program.load_oam()
+        #     if program.is_oam_available():
+        #         program.oam.init_tables()
+        #
+        # if program.has_oap():
+        #     program.load_oap()
+        #     if program.is_oap_available():
+        #         program.oap.init_tables()
+        #
+        # if program.has_go():
+        #     program.load_go()
+        #     if program.is_go_available():
+        #         program.go.init_tables()
 
 
 # with DB as db:
@@ -287,10 +324,15 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
 #     input('..')
 
 PATH = Path(r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics')
-live_repo = LiveRepository(root=PATH)
 
-print(live_repo.root)
-print(live_repo.profiles)
+# start ws
 
+# go live
+loop = asyncio.get_event_loop()
+# start_server_in_thread(loop)
+loop.run_until_complete(LiveRepository.create(root=PATH))
+loop.run_forever()
+
+print('while loop ...')
 while 1:
     ...
