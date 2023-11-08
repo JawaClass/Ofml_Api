@@ -7,12 +7,11 @@ from typing import Optional
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileSystemEvent
 from watchdog.observers import Observer
+from websockets.legacy.client import Connect
 
 from db import DB
 from repository import Repository, Program, OFMLPart, read_pdata_inp_descr, NotAvailable
 import logging
-
-from ws_server import notify_clients, start_server_in_thread
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -165,24 +164,6 @@ class LiveProgram(Program):
                 pass
         print(f'START: inserting {sql_table_name} of {self.name}')
 
-        # print('DF_COLUMNS', table.df.columns)
-        #
-        # with DB as db:
-        #     c = db.cursor()
-        #     import sqlite3
-        #     rt = c.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{sql_table_name}';")
-        #     if rt.fetchone():
-        #
-        #         rt = c.execute(f"PRAGMA table_info([{sql_table_name}]);")
-        #         print('PRAGMA....', rt.fetchall())
-        #         for column in rt.fetchall():
-        #             column_name = column[1]
-        #
-        # # if table exists in DB
-        # #   for c in df_columns:
-        # #       if c not in table_schema:
-        # #           DB_table add column c
-
         table.df.to_sql(sql_table_name, DB, if_exists='append', method='multi', chunksize=1000)
         print(f'DONE: inserting {sql_table_name} of {self.name}')
         self.callback(self, ofml_part, filename, event)
@@ -214,24 +195,24 @@ class LiveProgram(Program):
 
 class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
 
-    # def dispatch(self, event):
-    #     print('LiveRepository . dispatch', event)
-
     def on_callback(self, *args, **kwargs):
         print('LiveRepository :: on_callback', args, kwargs)
-        # ws_send('ws111111111111111111111')
 
-        message = json.dumps({
-            'COMMAND': 'update',
-            'program': args[0].name,
-            'ofml_part': args[1].name,
-            'table': args[2],
-        })
+        message = json.dumps(
+            {
+                'who': 'server',
+                'payload':
+                    {
+                        'COMMAND': 'update',
+                        'program': args[0].name,
+                        'ofml_part': args[1].name,
+                        'table': args[2],
+                    }
+            })
 
-        # notify_clients(message)
-        asyncio.run(notify_clients(message))
-        print('SENT !!!')
-        print('message', message)
+        self.ws_connection.send(message)
+
+        print('LiveRepo sent ws_message', message)
 
     async def load_program(self, program, keep_in_memory=False):
         if keep_in_memory:
@@ -279,6 +260,21 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
         self.listen_folder(path=str(self.root / 'profiles'), observer=Observer())
 
         self.read_profiles()
+
+        import websockets
+        url = "ws://127.0.0.1:8765"
+        from websockets.sync.client import connect
+
+        self.ws_connection = connect(url)
+
+        message = json.dumps(
+            {
+                'who': 'server',
+                'payload': "init"
+            })
+        print('send 1')
+        self.ws_connection.send(message)
+        print('send 2')
 
         # !!!!!!!!!!!!
         ###start_server_in_thread()

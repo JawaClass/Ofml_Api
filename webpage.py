@@ -4,6 +4,8 @@ from datetime import datetime
 import websocket
 import pandas as pd
 import streamlit as st
+from sqlalchemy import text
+
 from db import DB
 import threading
 
@@ -46,7 +48,7 @@ css = '''
 st.markdown(css, unsafe_allow_html=True)
 
 
-@st.cache_resource
+# @st.cache_resource
 def db_connection():
     return DB
 
@@ -87,24 +89,22 @@ def get_ofml_features(program_name):
 with st.sidebar:
     waiting_symbol = st.container()
 
-    sql_all_programs = "SELECT DISTINCT __sql__program__ FROM [ocd_article.csv];"
+    sql_all_programs = "SELECT DISTINCT __sql__program__ FROM [ocd_article.csv];" #
     with db_connection() as db:
-        crx = db.cursor()
-        crx.execute(sql_all_programs)
-        all_programs = [_[0] for _ in crx.fetchall()]
+        print('xxxxxxxxxxxxxxxx')
+        all_programs = db.execute(text(sql_all_programs)).mappings()
+        print(all_programs.all())
+        #mappings()
 
-    st.markdown('# Programmserien:')
-    for i, program_name in enumerate(all_programs):
-        with st.expander(f'**{i+1}** {program_name}'):
-            # st.markdown('OCD  :check_mark_button:')
-            # st.markdown('OAM  :check_mark_button:')
-            # st.markdown('OAS  :check_mark_button:')
-            # st.markdown('OAP  :check_mark_button:')
-            # st.markdown('GO  :check_mark_button:')
-            features = get_ofml_features(program_name)
-            st.write(features)
+    # st.markdown('## Programmserien')
+    # for i, program_name in enumerate(all_programs):
+    #     with st.expander(f'**{i+1}** {program_name}'):
+    #         st.write(program_name)
+            # features = get_ofml_features(program_name)
+            # st.write(features)
 
 
+st.stop()
 # with db_connection() as db:
 #     c = db.cursor()
 #     c.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -182,22 +182,22 @@ with OCD:
     for table_name, sql in st.session_state['sql_commands']['OCD'].items():
         df = pd.read_sql(sql, DB)
         st.write(f'{table_name} | {df.shape[0]} Einträge')
-        st.write(sql)
+        st.markdown(f'##  {sql}')
         st.write(df)
-
-with OAS:
-    if query_article:
-        st.session_state['sql_commands']['OAS'][
-            'article.csv'] = f"SELECT * FROM [article.csv] WHERE name LIKE '{query_article}';"
-
-        st.session_state['sql_commands']['OAS'][
-            'text.csv'] = f"SELECT * FROM [text.csv] WHERE name LIKE '{query_article}';"
-
-    for table_name, sql in st.session_state['sql_commands']['OAS'].items():
-        df = pd.read_sql(sql, DB)
-        st.write(f'{table_name} | {df.shape[0]} Einträge')
-        # st.write(sql)
-        st.write(df)
+#
+# with OAS:
+#     if query_article:
+#         st.session_state['sql_commands']['OAS'][
+#             'article.csv'] = f"SELECT * FROM [article.csv] WHERE name LIKE '{query_article}';"
+#
+#         st.session_state['sql_commands']['OAS'][
+#             'text.csv'] = f"SELECT * FROM [text.csv] WHERE name LIKE '{query_article}';"
+#
+#     for table_name, sql in st.session_state['sql_commands']['OAS'].items():
+#         df = pd.read_sql(sql, DB)
+#         st.write(f'{table_name} | {df.shape[0]} Einträge')
+#         # st.write(sql)
+#         st.write(df)
 
 # with OAM:
 #     if query_article:
@@ -259,7 +259,7 @@ async def watch(test):
 
 def listen_ws_now():
     print('create new ws!')
-    url = "ws://127.0.0.1:7890"
+    url = "ws://127.0.0.1:8765"
     ws = websocket.WebSocketApp(url,
                                 on_close=ws_on_close,
                                 on_error=ws_on_error,

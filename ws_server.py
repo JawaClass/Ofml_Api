@@ -1,107 +1,102 @@
-import threading
-
-import websockets
 import asyncio
+
+from websockets import ConnectionClosedOK
+from websockets.server import serve
 from websockets.legacy.server import WebSocketServerProtocol
+import json
+from json.decoder import JSONDecodeError
+import websockets
 
-# Server data
-PORT = 7890
-print("Server listening on Port " + str(PORT))
+CONNECTIONS: set[WebSocketServerProtocol] = set()
 
-# A set of connected ws clients
-connected: set[WebSocketServerProtocol] = set()
-_lock = threading.RLock()
+SERVER: WebSocketServerProtocol = None
 
-
-def get_lock(lock_msg):
-    print(lock_msg)
-    return _lock
-
-
-async def notify_clients(message):
-    # print('notify_clients', message, connected)
-
-    with get_lock(f'use lock [notify_clients] {id(_lock)}'):
-        for conn in connected:
-            try:
-                await conn.send(message)
-            except websockets.exceptions.ConnectionClosed as e:
-                print("Shouldnt happen !!! A client connection not active anymore.")
-            finally:
-                print('Shouldnt happen !!! Remove client connection.')
-                # connected.remove(conn)
-    print('release lock [notify_clients]', id(_lock))
+_event_format = {
+    'who': None,
+    'payload': None,
+}
 
 
-# The main behavior function for this server
-async def echo(websocket: WebSocketServerProtocol, path, is_client=True):
-    # print("A client just connected.", 'is_client=', websocket.is_client, 'side=', websocket.side, 'path=', path,
-    #       'is_client::', is_client)
-    # # Store a copy of the connected client
-    # print('add ws', type(websocket))
+class ServerAlreadyDefinedException(Exception):
+    pass
 
-    if is_client:
-        with get_lock(f'use lock [echo] {id(_lock)}'):
-            connected.add(websocket)
-        print('release lock [echo]', id(_lock))
 
-    # Handle incoming messages
+class MessageException(Exception):
+    pass
+
+
+def set_server(websocket: WebSocketServerProtocol):
+    global SERVER
+    if SERVER is not None:
+        raise ServerAlreadyDefinedException("Server is supposed to be only defined once!")
+    SERVER = websocket
+
+
+def get_clients():
+    return [_ for _ in CONNECTIONS if _ is not SERVER]
+
+
+def parse_event(message):
     try:
-        async for message in websocket:
-            print("Received message from client: " + message)
-            # Send a response to all connected clients except sender
-            for conn in connected:
-                if conn != websocket:
-                    await conn.send("Someone said: " + message)
-    # Handle disconnecting clients
-    except websockets.exceptions.ConnectionClosed as e:
-        print("A client just disconnected")
-    finally:
-        with get_lock(f'use lock [echo] {id(_lock)}'):
-            connected.remove(websocket)
-        print('release lock [echo]', id(_lock))
+        event: dict = json.loads(message)
+    except JSONDecodeError:
+        print('No valid JSON message', message)
+        return None
+
+    global _event_format
+    if not _event_format.keys() == event.keys():
+        print('JSON has wrong format', event)
+        return None
+
+    return event
 
 
-# # Function to send a message to all connected clients
-# async def send_message_to_clients():
-#     while True:
-#         return
-#         await asyncio.sleep(5)  # Wait for 5 seconds
-#         message = "This is a periodic message"
-#         print('server says:', message)
-#         for conn in connected:
-#             await conn.send(message)
-#         # return
+async def handler(websocket: WebSocketServerProtocol):
+    """
+    Handle a connection and dispatch it according to who is connecting.
+    1 connection is server
+    other connections is clients
+    server sends to clients
+    """
+
+    # new client/server connected!
+    CONNECTIONS.add(websocket)
+    print('handler. WS connected.', websocket, websocket.is_client)
+
+    # Receive and parse the "init" event from the UI.
+    while True:
+        try:
+            message = await websocket.recv()
+        except ConnectionClosedOK:
+            # no message anymore on this websocket
+            CONNECTIONS.remove(websocket)
+            continue
+
+        event = parse_event(message)
+
+        is_event_valid = event is not None
+
+        if not is_event_valid:
+            continue
+
+        if event['who'] == 'server':
+            if event['payload'] == 'init':
+                set_server(websocket)
+                continue
+        else:
+            raise MessageException('We only expect messages from Server')
+
+        print(f"Server is forwarding message to all clients n={len(get_clients())}:", message)
+
+        websockets.broadcast(
+            get_clients(),
+            json.dumps(event['payload'])
+        )
 
 
-def start(loop):
-    asyncio.set_event_loop(loop)
-    # Start the server and the periodic message sending task
-    start_server = websockets.serve(echo, "localhost", PORT)
-    # periodic_task = asyncio.ensure_future(send_message_to_clients())
-
-    # print('start_server', type(start_server))
-    # print('periodic_task', type(send_message_to_clients))
-    # Run the event loop
-
-    # loop.run_until_complete(start_server)
-
-    print('..........')
-
-    # asyncio.get_event_loop().run_forever()
+async def main():
+    async with serve(handler, "localhost", 8765):
+        await asyncio.Future()  # run forever
 
 
-def start_server_in_thread(loop):
-    import threading
-
-    t = threading.Thread(target=start, args=(loop,))
-    t.start()
-    return t
-
-
-if __name__ == '__main__':
-    print('main:::')
-    start_server_in_thread()
-    print('Done...')
-    while 1:
-        pass
+asyncio.run(main())
