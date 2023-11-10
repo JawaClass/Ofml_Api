@@ -153,16 +153,16 @@ class Program:
     async def load_ocd(self):
         self.read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr')
 
-    def load_oam(self):
+    async def load_oam(self):
         self.read_ofml_part(ofml_part='oam', inp_descr=self.paths['oam'] / 'oam.inp_descr')
 
-    def load_go(self):
+    async def load_go(self):
         self.read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
 
-    def load_oap(self):
+    async def load_oap(self):
         self.read_ofml_part(ofml_part='oap', inp_descr=self.paths['oap'] / 'oap.inp_descr')
 
-    def load_oas(self):
+    async def load_oas(self):
 
         path = self.paths['oas']
         tables_definitions = OrderedDict(**{
@@ -278,6 +278,16 @@ class Table(TimestampFile):
         super().__init__(filepath)
         self.df: pd.DataFrame = df
         self.name = filepath.name
+        self.database_table_name = self.name.replace('.', '_')
+
+    def database_column_type(self, column_name):
+        dtype = str(self.df[column_name].dtype)
+        print('database_column_type', column_name, dtype, type(dtype))
+        return {
+            'string': 'varchar(255)',
+            'float64': 'float',
+            'int': 'integer',
+        }[dtype]
 
 
 class OFMLPart:

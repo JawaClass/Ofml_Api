@@ -7,9 +7,8 @@ from typing import Optional
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileSystemEvent
 from watchdog.observers import Observer
-from websockets.legacy.client import Connect
 
-from db import DB
+import db
 from repository import Repository, Program, OFMLPart, read_pdata_inp_descr, NotAvailable
 import logging
 
@@ -99,7 +98,7 @@ class LiveOFMLPart(OFMLPart, FileSystemEventHandlerSingleEvent):
             print(table_name)
             if self.is_table_available(table_name):
                 print('table', table_name, 'available')
-                await self.on_change(filename=table_name, ofml_part=self, event=None)
+                self.on_change(filename=table_name, ofml_part=self, event=None)
 
     def update_table(self, table_name):
         # reading the table will trigger a modification event we will ignore
@@ -147,25 +146,13 @@ class LiveProgram(Program):
     def on_ofml_part_change(self, filename, ofml_part: LiveOFMLPart, event):
         print('ofml_part_change', filename, self.name, ofml_part, event)
         table = ofml_part.table(filename)
-        sql_table_name = str(table.name)  # linter
+
         table.df['__sql__program__'] = self.name
         table.df['__sql__timestamp_modified__'] = table.timestamp_modified
         table.df['__sql__timestamp_read__'] = table.timestamp_read
 
-        # drop table entries for program if exists
-        with DB as db:
-            c = db.cursor()
-            import sqlite3
-            try:
-                # if table exists...
-                rt = c.execute(f"DELETE FROM [{sql_table_name}] WHERE __sql__program__='{self.name}';")
-                # print('Delete::', rt.fetchall())
-            except sqlite3.OperationalError:
-                pass
-        print(f'START: inserting {sql_table_name} of {self.name}')
+        db.update_table(table, self.name)
 
-        table.df.to_sql(sql_table_name, DB, if_exists='append', method='multi', chunksize=1000)
-        print(f'DONE: inserting {sql_table_name} of {self.name}')
         self.callback(self, ofml_part, filename, event)
 
     def read_ofml_part(self, **kwargs):
@@ -237,18 +224,48 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
 
         for name in repo.program_names():
 
-            if name not in ['talos', 's6', 'desks_m_cat']:  # 's6',
-                continue
+            # if name not in ['regalsystemoap']:  # 's6',
+            #     continue
 
             program: LiveProgram = await repo.load_program(name, keep_in_memory=False)
+
+            do_init = True
 
             if program.has_ocd():
                 print('load ocd')
                 await program.load_ocd()
+                if do_init:
+                    if program.is_ocd_available():
+                        await program.ocd.init_tables()
 
-                # if program.is_ocd_available():
-                #     await program.ocd.init_tables()
+            if program.has_oas():
+                print('load oas')
+                await program.load_oas()
+                if do_init:
+                    if program.is_oas_available():
+                        await program.oas.init_tables()
 
+            if program.has_oam():
+                print('load oam')
+                await program.load_oam()
+                if do_init:
+                    if program.is_oam_available():
+                        await program.oam.init_tables()
+
+            if program.has_oap():
+                print('load oap')
+                await program.load_oap()
+                if do_init:
+                    if program.is_oap_available():
+                        await program.oap.init_tables()
+
+            if program.has_go():
+                print('load go')
+                await program.load_go()
+                if do_init:
+                    if program.is_go_available():
+                        await program.go.init_tables()
+        print('Done init. Now staying live.')
         return repo
 
     def __init__(self, root: Path):
@@ -261,7 +278,6 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
 
         self.read_profiles()
 
-        import websockets
         url = "ws://127.0.0.1:8765"
         from websockets.sync.client import connect
 
@@ -276,59 +292,12 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
         self.ws_connection.send(message)
         print('send 2')
 
-        # !!!!!!!!!!!!
-        ###start_server_in_thread()
+    def on_any_event(self, event):
+        print('LiveRepository', 'on_any_event', event)
 
-        # for name in self.program_names():
-        #
-        #     # if name not in ['talos', 's6', 'desks_m_cat']:  # 's6',
-        #     #     continue
-        #
-        #     program: LiveProgram = self.load_program(name, keep_in_memory=False)
-        #
-        #     if program.has_ocd():
-        #         print('load ocd')
-        #         await program.load_ocd()
-
-        # if program.is_ocd_available():
-        #     program.ocd.init_tables()
-
-        # if program.has_oas():
-        #     program.load_oas()
-        #     if program.is_oas_available():
-        #         program.oas.init_tables()
-        #
-        # if program.has_oam():
-        #     program.load_oam()
-        #     if program.is_oam_available():
-        #         program.oam.init_tables()
-        #
-        # if program.has_oap():
-        #     program.load_oap()
-        #     if program.is_oap_available():
-        #         program.oap.init_tables()
-        #
-        # if program.has_go():
-        #     program.load_go()
-        #     if program.is_go_available():
-        #         program.go.init_tables()
-
-
-# with DB as db:
-#     db.execute("ALTER TABLE [oap_propedit.csv] ADD COLUMN staterestr TEXT;")
-#     db.commit()
-#     input('..')
 
 PATH = Path(r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics')
 
-# start ws
-
-# go live
 loop = asyncio.get_event_loop()
-# start_server_in_thread(loop)
 loop.run_until_complete(LiveRepository.create(root=PATH))
 loop.run_forever()
-
-print('while loop ...')
-while 1:
-    ...

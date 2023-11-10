@@ -1,6 +1,6 @@
 import asyncio
 
-from websockets import ConnectionClosedOK
+from websockets import ConnectionClosedOK, ConnectionClosedError
 from websockets.server import serve
 from websockets.legacy.server import WebSocketServerProtocol
 import json
@@ -28,7 +28,8 @@ class MessageException(Exception):
 def set_server(websocket: WebSocketServerProtocol):
     global SERVER
     if SERVER is not None:
-        raise ServerAlreadyDefinedException("Server is supposed to be only defined once!")
+        # raise ServerAlreadyDefinedException("Server is supposed to be only defined once!")
+        print('Warning! - Server is supposed to be only defined once!')
     SERVER = websocket
 
 
@@ -67,10 +68,16 @@ async def handler(websocket: WebSocketServerProtocol):
     while True:
         try:
             message = await websocket.recv()
-        except ConnectionClosedOK:
+        except (ConnectionClosedOK, ConnectionClosedError):
             # no message anymore on this websocket
-            CONNECTIONS.remove(websocket)
-            continue
+            print(f'CONNECTIONS {len(CONNECTIONS)} remove', websocket)
+            print('...from:')
+            for _ in CONNECTIONS:
+                print('CON::', _)
+            if websocket in CONNECTIONS:
+                CONNECTIONS.remove(websocket)
+            #continue
+            return
 
         event = parse_event(message)
 
@@ -81,6 +88,7 @@ async def handler(websocket: WebSocketServerProtocol):
 
         if event['who'] == 'server':
             if event['payload'] == 'init':
+                print('Server connected.')
                 set_server(websocket)
                 continue
         else:
