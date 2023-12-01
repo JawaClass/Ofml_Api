@@ -197,7 +197,7 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
                     }
             })
 
-        self.ws_connection.send(message)
+        # self.ws_connection.send(message)
 
         print('LiveRepo sent ws_message', message)
 
@@ -265,6 +265,18 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
                 if do_init:
                     if program.is_go_available():
                         await program.go.init_tables()
+
+            if do_init:
+                import datetime
+                timestamp = datetime.datetime.now()
+                con = db.get_new_connection()
+                date = timestamp.strftime("%Y-%m-%d-%H-%M-%S")
+                type_ = "init_tables"
+                con.execute(f"""
+                    DELETE * FROM timestamp WHERE type="{type_}";
+                    INSERT INTO timestamp (date, type) VALUES  ("{date}", "{type_}");
+                """)
+
         print('Done init. Now staying live.')
         return repo
 
@@ -274,23 +286,23 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
         FileSystemEventHandlerSingleEvent.__init__(self)
         Repository.__init__(self, root)
 
-        self.listen_folder(path=str(self.root / 'profiles'), observer=Observer())
+        # self.listen_folder(path=str(self.root / 'profiles'), observer=Observer())
 
         self.read_profiles()
 
-        url = "ws://127.0.0.1:8765"
-        from websockets.sync.client import connect
-
-        self.ws_connection = connect(url)
-
-        message = json.dumps(
-            {
-                'who': 'server',
-                'payload': "init"
-            })
-        print('send 1')
-        self.ws_connection.send(message)
-        print('send 2')
+        # url = "ws://127.0.0.1:8765"
+        # from websockets.sync.client import connect
+        #
+        # # self.ws_connection = connect(url)
+        #
+        # message = json.dumps(
+        #     {
+        #         'who': 'server',
+        #         'payload': "init"
+        #     })
+        # print('send 1')
+        # # self.ws_connection.send(message)
+        # print('send 2')
 
     def on_any_event(self, event):
         print('LiveRepository', 'on_any_event', event)
