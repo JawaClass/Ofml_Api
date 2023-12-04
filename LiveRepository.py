@@ -9,7 +9,7 @@ from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileSyste
 from watchdog.observers import Observer
 
 import db
-from repository import Repository, Program, OFMLPart, read_pdata_inp_descr, NotAvailable
+from repo.repository import Repository, Program, OFMLPart, read_pdata_inp_descr, NotAvailable
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
@@ -147,9 +147,9 @@ class LiveProgram(Program):
         print('ofml_part_change', filename, self.name, ofml_part, event)
         table = ofml_part.table(filename)
 
-        table.df['__sql__program__'] = self.name
-        table.df['__sql__timestamp_modified__'] = table.timestamp_modified
-        table.df['__sql__timestamp_read__'] = table.timestamp_read
+        table.df['sql_db_program'] = self.name
+        table.df['sql_db_timestamp_modified'] = table.timestamp_modified
+        table.df['sql_db_timestamp_read'] = table.timestamp_read
 
         db.update_table(table, self.name)
 
@@ -219,63 +219,71 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
                                observer=Observer())
 
     @classmethod
-    async def create(cls, root: Path):
+    async def create(cls, root: Path, do_init=True):
         repo = LiveRepository(root)
 
         for name in repo.program_names():
 
-            # if name not in ['regalsystemoap']:  # 's6',
+            promises_init_db = []
+
+            start = time.time()
+            # if name not in ['quick3']:  # 's6',
             #     continue
 
             program: LiveProgram = await repo.load_program(name, keep_in_memory=False)
-
-            do_init = True
 
             if program.has_ocd():
                 print('load ocd')
                 await program.load_ocd()
                 if do_init:
                     if program.is_ocd_available():
-                        await program.ocd.init_tables()
+                        promises_init_db.append(program.ocd.init_tables())
 
             if program.has_oas():
                 print('load oas')
                 await program.load_oas()
                 if do_init:
                     if program.is_oas_available():
-                        await program.oas.init_tables()
+                        promises_init_db.append(program.oas.init_tables())
 
             if program.has_oam():
                 print('load oam')
                 await program.load_oam()
                 if do_init:
                     if program.is_oam_available():
-                        await program.oam.init_tables()
+                        promises_init_db.append(program.oam.init_tables())
 
             if program.has_oap():
                 print('load oap')
                 await program.load_oap()
                 if do_init:
                     if program.is_oap_available():
-                        await program.oap.init_tables()
+                        promises_init_db.append(program.oap.init_tables())
 
             if program.has_go():
                 print('load go')
                 await program.load_go()
                 if do_init:
                     if program.is_go_available():
-                        await program.go.init_tables()
+                        promises_init_db.append(program.go.init_tables())
 
-            if do_init:
-                import datetime
-                timestamp = datetime.datetime.now()
-                con = db.get_new_connection()
-                date = timestamp.strftime("%Y-%m-%d-%H-%M-%S")
-                type_ = "init_tables"
-                con.execute(f"""
-                    DELETE * FROM timestamp WHERE type="{type_}";
-                    INSERT INTO timestamp (date, type) VALUES  ("{date}", "{type_}");
-                """)
+            await asyncio.gather(*promises_init_db)
+
+            print("Took time", program, time.time() - start, "s")
+
+        if do_init:
+            import datetime
+            timestamp = datetime.datetime.now()
+            date = timestamp.strftime("%Y-%m-%d-%H-%M-%S")
+            type_ = "init_tables"
+            db.execute_write(f"""
+                DELETE FROM timestamp WHERE type="{type_}";  
+            """)
+            db.execute_write(
+                f"""
+                     INSERT INTO timestamp (date, type) VALUES  ("{date}", "{type_}");
+                """
+            )
 
         print('Done init. Now staying live.')
         return repo
@@ -308,7 +316,9 @@ class LiveRepository(Repository, FileSystemEventHandlerSingleEvent):
         print('LiveRepository', 'on_any_event', event)
 
 
-PATH = Path(r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics')
+test_env = r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics'
+prod_env = r'\\w2_fs1\edv\knps-testumgebung\ofml_development\repository'
+PATH = Path(prod_env)
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(LiveRepository.create(root=PATH))

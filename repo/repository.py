@@ -1,6 +1,6 @@
 import os
 import re
-import time
+import datetime
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Dict
@@ -17,7 +17,7 @@ def catch_file_exception(f):
         try:
             result = f(*args, **kwargs)
         except (OSError, IOError) as e:
-            print('.......catch_file_exception', args, kwargs)
+            print('File could not be read!', args, kwargs)
             return NotAvailable(e)
             # input('.')
         return result
@@ -33,14 +33,20 @@ class NotAvailable:
 
 class Repository:
 
+    def __str__(self):
+        return f"Repository {self.root} -> {self.__programs.items()}"
+
     def __init__(self, root: Path, **kwargs):
         self.root = root
 
         self.profiles = None
         self.__programs = OrderedDict()
 
-    def __getitem__(self, program):
-        return self.load_program(program)
+    def programs(self):
+        return self.__programs.values()
+
+    def __getitem__(self, program) -> 'Program':
+        return self.__programs[program]
 
     def read_profiles(self):
         self.profiles = ConfigFile(self.root / 'profiles' / 'kn.cfg')
@@ -49,7 +55,7 @@ class Repository:
         registry_name = self.program_name2registry_name(program)
         return ConfigFile(self.root / 'registry' / f'{registry_name}.cfg')
 
-    def load_program(self, program, keep_in_memory=False):
+    def load_program(self, program, keep_in_memory: bool):
         if keep_in_memory:
 
             if program in self.__programs:
@@ -65,6 +71,8 @@ class Repository:
             return Program(registry=reg, root=self.root)
 
     def program_names(self):
+        if self.profiles is None:
+            raise ValueError("First read the profiles file")
         return ['_'.join(cfg.split('_')[1:-2]) for cfg, active in self.profiles.config['[lib:kn]'].items() if active]
 
     def program_name2registry_name(self, program):
@@ -87,11 +95,11 @@ class Program:
         self.program_path = self.root / 'kn' / self.name
 
         self.paths = {
-            'ocd': self.root / self.registry['productdb_path'] if self.has_ocd() else None,
-            'oam': self.root / self.registry['oam_path'] if self.has_oam() else None,
-            'oap': self.program_path / 'DE' / '2' / 'oap' if self.has_oap() else None,
-            'oas': self.program_path / 'DE' / '2' / 'cat' if self.has_oas() else None,
-            'go': self.program_path / '2' if self.has_go() else None
+            'ocd': self.root / self.registry['productdb_path'] if self.contains_ocd() else None,
+            'oam': self.root / self.registry['oam_path'] if self.contains_oam() else None,
+            'oap': self.program_path / 'DE' / '2' / 'oap' if self.contains_oap() else None,
+            'oas': self.program_path / 'DE' / '2' / 'cat' if self.contains_oas() else None,
+            'go': self.program_path / '2' if self.contains_go() else None
         }
 
         self.ocd: Optional[OFMLPart] = None
@@ -106,7 +114,7 @@ class Program:
     def __repr__(self):
         return self.__str__()
 
-    def read_ofml_part(self, **kwargs):
+    def _read_ofml_part(self, **kwargs):
 
         inp_descr = kwargs.get('inp_descr', None)
         tables_definitions = kwargs.get('tables_definitions', None)
@@ -115,9 +123,10 @@ class Program:
         assert inp_descr is not None or tables_definitions is not None
 
         ofml_part = kwargs['ofml_part']
-
+        print("_read_ofml_part", ofml_part, inp_descr)
         if inp_descr:
             self.__setattr__(ofml_part, OFMLPart.from_inp_descr(inp_descr))
+            print("DONE", type(self.ocd))
 
         else:
             path = kwargs['path']
@@ -150,19 +159,31 @@ class Program:
     def is_oap_available(self):
         return type(self.oap) is not NotAvailable
 
-    async def load_ocd(self):
-        self.read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr')
+    def load_all(self):
+        if self.contains_ocd():
+            self.load_ocd()
+        if self.contains_oam():
+            self.load_oam()
+        if self.contains_oas():
+            self.load_oas()
+        if self.contains_go():
+            self.load_go()
+        if self.contains_oap():
+            self.load_oap()
 
-    async def load_oam(self):
-        self.read_ofml_part(ofml_part='oam', inp_descr=self.paths['oam'] / 'oam.inp_descr')
+    def load_ocd(self):
+        self._read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr')
 
-    async def load_go(self):
-        self.read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
+    def load_oam(self):
+        self._read_ofml_part(ofml_part='oam', inp_descr=self.paths['oam'] / 'oam.inp_descr')
 
-    async def load_oap(self):
-        self.read_ofml_part(ofml_part='oap', inp_descr=self.paths['oap'] / 'oap.inp_descr')
+    def load_go(self):
+        self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
 
-    async def load_oas(self):
+    def load_oap(self):
+        self._read_ofml_part(ofml_part='oap', inp_descr=self.paths['oap'] / 'oap.inp_descr')
+
+    def load_oas(self):
 
         path = self.paths['oas']
         tables_definitions = OrderedDict(**{
@@ -179,31 +200,31 @@ class Program:
 
         })
 
-        self.read_ofml_part(ofml_part='oas', tables_definitions=tables_definitions, path=path)
+        self._read_ofml_part(ofml_part='oas', tables_definitions=tables_definitions, path=path)
 
-    def has_ocd(self):
+    def contains_ocd(self):
         return 'productdb_path' in self.registry
 
-    def has_oam(self):
+    def contains_oam(self):
         return 'oam_path' in self.registry
 
-    def has_go(self):
+    def contains_go(self):
         return 'series_type' in self.registry and 'meta_type' in self.registry
 
-    def has_oap(self):
+    def contains_oap(self):
         oap_path = self.root / f'kn/{self.name}/DE/2/oap'
         return oap_path.exists()
 
-    def has_oas(self):
+    def contains_oas(self):
         return 'type' in self.registry and self.registry.get('cat_type', None) in ['XCF']
 
     def ofml_parts(self):
         return {
-            'ocd': {'features': self.has_ocd(), 'loaded': bool(self.ocd)},
-            'oam': {'features': self.has_oam(), 'loaded': bool(self.oam)},
-            'go': {'features': self.has_go(), 'loaded': bool(self.go)},
-            'oas': {'features': self.has_oas(), 'loaded': bool(self.oas)},
-            'oap': {'features': self.has_oap(), 'loaded': bool(self.oap)},
+            'ocd': {'features': self.contains_ocd(), 'loaded': bool(self.ocd)},
+            'oam': {'features': self.contains_oam(), 'loaded': bool(self.oam)},
+            'go': {'features': self.contains_go(), 'loaded': bool(self.go)},
+            'oas': {'features': self.contains_oas(), 'loaded': bool(self.oas)},
+            'oap': {'features': self.contains_oap(), 'loaded': bool(self.oap)},
         }
 
     def featured_ofml_parts(self):
@@ -215,7 +236,8 @@ class TimestampFile:
     def __init__(self, path):
         self.path = path
         self._file_attributes = os.stat(self.path)
-        self.timestamp_read = time.time()
+        timestamp = datetime.datetime.now()
+        self.timestamp_read = timestamp.strftime("%Y-%m-%d-%H-%M-%S")
 
     def __str__(self):
         return f'TimestampFile: path={self.path}, timestamp_modified={self.timestamp_modified}, timestamp_read={self.timestamp_read}'
@@ -265,7 +287,6 @@ class ConfigFile(TimestampFile):
                 if re.match('.+=.+', _):
                     k, v = _.split('=')
                     if section:
-                        # print('section', section, k, v)
                         d[section][k] = v
                     else:
                         d[k] = v
@@ -278,7 +299,7 @@ class Table(TimestampFile):
         super().__init__(filepath)
         self.df: pd.DataFrame = df
         self.name = filepath.name
-        self.database_table_name = self.name.replace('.', '_')
+        self.database_table_name = re.sub(r"\..*$", "", self.name)
 
     def database_column_type(self, column_name):
         dtype = str(self.df[column_name].dtype)
@@ -299,6 +320,7 @@ class OFMLPart:
     def from_inp_descr(inp_descr_path):
         tables_definitions = read_pdata_inp_descr(inp_descr_path)
         if isinstance(tables_definitions, NotAvailable):
+            print("not 111111111111111111111111111111111111111111111")
             return tables_definitions
         path = inp_descr_path.parents[0]
         return OFMLPart(path=path, tables_definitions=tables_definitions)
@@ -373,8 +395,6 @@ def ofml_dtype_2_pandas_dtype(ofml_dtype):
     ofml_dtype = str.lower(ofml_dtype)
     if 'string' in ofml_dtype:
         return 'string'
-    # if 'int' in ofml_dtype:
-    #     return 'Int64'
     return ofml_dtype
 
 
@@ -407,39 +427,6 @@ def read_pdata_inp_descr(file_name):
                 datatype = row[3]
                 datatype = ofml_dtype_2_pandas_dtype(datatype)
 
-                # result[table_name].append({'field': field_name, 'datatype': datatype})
                 result[table_name][0].append(field_name)
                 result[table_name][1].append(datatype)
     return result
-
-
-#
-#
-# # Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    string = 'methodCall("AC_MC_WIDTH")*0.5-0.1 + methodCall("AC_MC_HEIGHT")'
-
-    res = re.findall('methodCall\("(.+?)"\)', string)
-
-    print(res)
-    print(type(res))
-
-    print('---')
-
-    res = re.search('methodCall\(.+?\)', string)
-
-    print(res)
-    print(type(res))
-#
-#     i = 8329
-#     j = 8192
-#
-#     print(i & j)
-#     print(i & 8)
-#     repo = Repository(Path(r'b:\Testumgebung\EasternGraphics'))
-#
-#     for name, program in repo.programs.items():
-#         print(program.name)
-#         print(program.features)
-#         print('...')
-#
