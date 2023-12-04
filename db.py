@@ -28,6 +28,7 @@ def get_db_connection():
 
 
 def update_table(table: Table, program_name):
+    print(f"update_table. {table.name}")
     sql_table_name = table.database_table_name
 
     sql_delete_table_entries = f"DELETE FROM {sql_table_name} WHERE sql_db_program='{program_name}';"
@@ -37,7 +38,7 @@ def update_table(table: Table, program_name):
     except ProgrammingError:
         pass
 
-    print(f'START: inserting {sql_table_name} of {program_name}')
+    #print(f'START: inserting {sql_table_name} of {program_name}')
 
     def _insert():
 
@@ -77,7 +78,7 @@ def update_table(table: Table, program_name):
 
 
 def execute_write(sql_cmd):
-    with get_db_connection() as c:
+    with get_new_connection() as c:
         c.execute(text(sql_cmd))
         c.commit()
 

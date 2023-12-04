@@ -123,10 +123,9 @@ class Program:
         assert inp_descr is not None or tables_definitions is not None
 
         ofml_part = kwargs['ofml_part']
-        print("_read_ofml_part", ofml_part, inp_descr)
+
         if inp_descr:
             self.__setattr__(ofml_part, OFMLPart.from_inp_descr(inp_descr))
-            print("DONE", type(self.ocd))
 
         else:
             path = kwargs['path']
@@ -145,19 +144,19 @@ class Program:
             self.load_oas()
 
     def is_ocd_available(self):
-        return type(self.ocd) is not NotAvailable
+        return type(self.ocd) is OFMLPart
 
     def is_oam_available(self):
-        return type(self.oam) is not NotAvailable
+        return type(self.oam) is OFMLPart
 
     def is_oas_available(self):
-        return type(self.oas) is not NotAvailable
+        return type(self.oas) is OFMLPart
 
     def is_go_available(self):
-        return type(self.go) is not NotAvailable
+        return type(self.go) is OFMLPart
 
     def is_oap_available(self):
-        return type(self.oap) is not NotAvailable
+        return type(self.oap) is OFMLPart
 
     def load_all(self):
         if self.contains_ocd():
@@ -320,7 +319,6 @@ class OFMLPart:
     def from_inp_descr(inp_descr_path):
         tables_definitions = read_pdata_inp_descr(inp_descr_path)
         if isinstance(tables_definitions, NotAvailable):
-            print("not 111111111111111111111111111111111111111111111")
             return tables_definitions
         path = inp_descr_path.parents[0]
         return OFMLPart(path=path, tables_definitions=tables_definitions)
@@ -360,6 +358,7 @@ class OFMLPart:
 
         table = re.sub(r'\..+$', '', table)
         self.tables[table] = read_table(table_path, columns, dtypes, encoding)
+        return self.tables[table]
 
     def table(self, name: str) -> Table:
         name = re.sub(r'\..+$', '', name)
@@ -385,7 +384,7 @@ def read_table(filepath, names, dtype, encoding):
                          encoding=encoding,
                          comment='#',
                          on_bad_lines=on_bad_lines)
-    except ValueError as e:
+    except (ValueError, FileNotFoundError, ) as e:
         print('read_table ERR', e)
         return NotAvailable(e)
     return Table(df, filepath)
