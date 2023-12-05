@@ -2,7 +2,7 @@ import re
 from sqlalchemy.exc import ProgrammingError, OperationalError
 import sqlalchemy
 from sqlalchemy import text
-
+from sqlalchemy.ext.asyncio import create_async_engine
 from repo.repository import Table
 
 host = 'pdf2obs01.kn.local'
@@ -29,6 +29,7 @@ def get_db_connection():
 
 def update_table(table: Table, program_name):
     print(f"update_table. {table.name}")
+    #return
     sql_table_name = table.database_table_name
 
     sql_delete_table_entries = f"DELETE FROM {sql_table_name} WHERE sql_db_program='{program_name}';"
@@ -37,6 +38,8 @@ def update_table(table: Table, program_name):
         execute_write(sql_delete_table_entries)
     except ProgrammingError:
         pass
+
+    return
 
     #print(f'START: inserting {sql_table_name} of {program_name}')
 
