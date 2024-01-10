@@ -1,12 +1,12 @@
 import os.path
 import schedule
 import time
-from repo.persist_repo_async import run_with_path
 import argparse
 import re
-import email_notifier
 from loguru import logger
 from datetime import datetime
+from repo.persist_repo_async import run_with_path
+import email_notifier
 
 
 def is_valid_time_format(value):

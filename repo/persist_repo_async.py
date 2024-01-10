@@ -1,11 +1,11 @@
 from datetime import datetime
 from pathlib import Path
-from repo.repository_async import RepositoryAsync, ProgramAsync, Table
 import asyncio
 import time
-from repo.db_async import AsyncDatabaseInterface
 from loguru import logger
 from typing import Coroutine, Any, Generator
+from .repository_async import RepositoryAsync, ProgramAsync, Table
+from .db_async import AsyncDatabaseInterface
 
 TEST_ENV = r'\\w2_fs1\edv\knps-testumgebung\Testumgebung\EasternGraphics'
 PROD_ENV = r'\\w2_fs1\edv\knps-testumgebung\ofml_development\repository'
@@ -89,4 +89,5 @@ def run_with_path(path: str):
 
 
 if __name__ == "__main__":
-    run_prod_env()
+    print("works")
+    # run_prod_env()

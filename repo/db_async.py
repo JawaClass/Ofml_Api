@@ -1,7 +1,7 @@
 import asyncio
 import aiomysql
-from repo.repository import Table
 from loguru import logger
+from .repository import Table
 from settings import db_config
 
 

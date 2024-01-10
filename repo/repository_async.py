@@ -1,5 +1,5 @@
-from repo.repository import Repository, Program, Table, OFMLPart, NotAvailable
 import asyncio
+from .repository import Repository, Program, Table, OFMLPart, NotAvailable
 
 
 class ProgramAsync(Program):

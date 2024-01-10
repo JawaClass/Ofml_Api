@@ -2,6 +2,7 @@ import configparser
 from pathlib import Path
 import os
 from loguru import logger
+
 config = configparser.ConfigParser()
 config_file = Path(os.path.dirname(os.path.abspath(__file__))) / 'config.ini'
 suc = config.read(config_file)
