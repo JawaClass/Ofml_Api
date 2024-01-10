@@ -4,6 +4,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python scheduler_db_update.py "01:00" "/mnt/knps-testumgebung/ofml_development/repository"
+    command: python scheduler_db_update.py "01:00" "/mnt/knps_testumgebung/ofml_development/repository"
     volumes:
-      - /mnt/knps-testumgebung:/mnt/knps-testumgebung
+      - /mnt/knps_testumgebung:/mnt/knps_testumgebung
