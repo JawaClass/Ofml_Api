@@ -1,0 +1,9 @@
+version: '3'
+services:
+  ofml_db_scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python scheduler_db_update.py "01:00" "/mnt/knps-testumgebung/ofml_development/repository"
+    volumes:
+      - /mnt/knps-testumgebung:/mnt/knps-testumgebung

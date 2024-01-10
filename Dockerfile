@@ -4,6 +4,7 @@ FROM python:3.11
 WORKDIR /app
 COPY . /app
 
-RUN pip install -r requirements.txt
+RUN mkdir /mnt/knps-testumgebung && \
+pip install -r requirements.txt
 
-CMD python schedule_db_update.py
+CMD []
