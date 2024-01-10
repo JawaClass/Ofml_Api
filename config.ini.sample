@@ -4,3 +4,11 @@ port = your_database_port
 user = your_database_user
 password = your_database_password
 db = your_database_name
+
+
+[email]
+username = your_username
+password = your_password
+host = your_email_server
+port = your_email_port
+tls = your_tls
