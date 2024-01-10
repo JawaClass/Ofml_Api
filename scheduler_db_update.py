@@ -41,9 +41,10 @@ if not is_valid_ofml_repo_path(args.ofml_repo_path):
 
 
 def print_scheduled_jobs():
-    logger.info("Scheduled jobs:")
-    for _ in schedule.get_jobs():
-        logger.info(" - ", _.__repr__())
+    jobs = schedule.get_jobs()
+    logger.info(f"Scheduled jobs ({len(jobs)}):")
+    for _ in jobs:
+        logger.info(f" - {_.__repr__()}")
 
 
 def job():
@@ -68,5 +69,5 @@ print_scheduled_jobs()
 while True:
     schedule.run_pending()
     idle_seconds = schedule.idle_seconds()
-    logger.info("sleep until next scheduled job", idle_seconds)
+    logger.info(f"sleep until next scheduled job: {idle_seconds} seconds")
     time.sleep(idle_seconds)
