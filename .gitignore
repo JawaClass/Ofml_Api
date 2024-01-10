@@ -6,3 +6,7 @@ venv/
 
 # Ignore JetBrains folder
 .idea/
+
+
+# ingore the config.ini with sensitive information
+config.ini
