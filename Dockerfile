@@ -4,7 +4,7 @@ FROM python:3.11
 WORKDIR /app
 COPY . /app
 
-RUN mkdir /mnt/knps-testumgebung && \
+RUN mkdir /mnt/knps_testumgebung && \
 pip install -r requirements.txt
 
 CMD []
