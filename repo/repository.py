@@ -286,7 +286,7 @@ class ConfigFile(TimestampFile):
         return self.config.get(*args, **kwargs)
 
     def read(self):
-        with open(self.path) as f:
+        with open(self.path, encoding="cp1252") as f:
             section = None
             d = OrderedDict()
             for _ in f.readlines():
@@ -367,7 +367,7 @@ class OFMLPart:
         for name in self.filenames:
             self.read_table(name)
 
-    def read_table(self, filename, encoding='ANSI'):
+    def read_table(self, filename, encoding="cp1252"):#"#'ANSI'):
         table_path = self.path / filename
         columns, dtypes = self.tables_definitions[filename]
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
@@ -418,7 +418,7 @@ def ofml_dtype_2_pandas_dtype(ofml_dtype):
 def read_pdata_inp_descr(file_name):
     result = OrderedDict()
     inside_comment = False
-    with open(file_name, 'r') as file:
+    with open(file_name, 'r', encoding="cp1252") as file:
         for line in file:
 
             if line.isspace():
