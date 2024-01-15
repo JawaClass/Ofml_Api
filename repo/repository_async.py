@@ -86,6 +86,7 @@ class RepositoryAsync(Repository):
         return result
 
     async def on_program_loaded(self, program: ProgramAsync):
+        id(self)
         await program.load_all()
         await asyncio.gather(*program.collected_files_to_read)
 

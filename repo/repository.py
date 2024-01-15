@@ -132,6 +132,9 @@ class Program:
     def load_go(self):
         ofml_part = self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
         if not isinstance(ofml_part, NotAvailable):
+            # TODO: this is not a good idea here.
+            # BETTER: make use of the seperator that's stored in the inp_descr files and store this inside an ofml_part
+            # then simply add the sr entries there and do not read them at once at this point
             for language in ["de", "en", "fr", "nl"]:
                 ofml_part.read_table(f"{self.name}_{language}.sr",
                                      table_definition=[["key", "value"], ["string", "string"]],
@@ -387,7 +390,6 @@ class OFMLPart:
         table_path = self.path / filename
         columns, dtypes = table_definition
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
-        print("read_table:: ", filename, sep)
         table = re.sub(r'\..+$', '', filename)
         self.tables[table] = read_table(table_path, columns, dtypes, encoding, sep=sep)
         return self.tables[table]
