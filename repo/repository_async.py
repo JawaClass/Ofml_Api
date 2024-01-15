@@ -69,7 +69,7 @@ class RepositoryAsync(Repository):
     async def load_program(self, program, keep_in_memory: bool = True, program_cls=None, **kwargs) -> ProgramAsync:
         result: ProgramAsync = await asyncio.to_thread(super().load_program,
                                                        **{
-                                                           "program": program,
+                                                           "program_name": program,
                                                            "keep_in_memory": keep_in_memory,
                                                            "program_cls": ProgramAsync
                                                        })

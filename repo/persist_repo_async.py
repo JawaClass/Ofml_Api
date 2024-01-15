@@ -90,4 +90,4 @@ def run_with_path(path: str):
 
 if __name__ == "__main__":
     print("works")
-    run_prod_env()
+    run_test_env()

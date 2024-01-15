@@ -57,6 +57,9 @@ class AsyncDatabaseInterface:
                 except Exception as e:
                     logger.error(f"persist_table failed {table.name} _ {table.database_table_name} in {program_name} | {e}")
                     return
+                else:
+                    # logger.info(f"persist_table success {table.name} _ {table.database_table_name} in {program_name}")
+                    pass
 
                 table.df.fillna(value='', inplace=True)
 

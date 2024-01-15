@@ -23,6 +23,9 @@ class NotAvailable:
     def __init__(self, error):
         self.error = error
 
+    def __repr__(self):
+        return f"NotAvailable({self.error})"
+
 
 class Repository:
 
@@ -48,13 +51,13 @@ class Repository:
         registry_name = self.program_name2registry_name(program)
         return ConfigFile(self.root / 'registry' / f'{registry_name}.cfg')
 
-    def load_program(self, program, keep_in_memory: bool = True, program_cls=None):
+    def load_program(self, program_name: str, keep_in_memory: bool = True, program_cls=None):
         if program_cls is None:
             program_cls = Program
-        reg = self.read_registry(program)
+        reg = self.read_registry(program_name)
         program = program_cls(registry=reg, root=self.root)
         if keep_in_memory:
-            self.__programs[program] = program
+            self.__programs[program_name] = program
         return program
 
     def program_names(self):
@@ -127,7 +130,13 @@ class Program:
         return self._read_ofml_part(ofml_part='oam', inp_descr=self.paths['oam'] / 'oam.inp_descr')
 
     def load_go(self):
-        return self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
+        ofml_part = self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
+        if not isinstance(ofml_part, NotAvailable):
+            for language in ["de", "en", "fr", "nl", "xxxxx"]:
+                ofml_part.read_table(f"{self.name}_{language}.sr",
+                                     table_definition=[["key", "value"], ["string", "string"]],
+                                     sep="=")
+        return ofml_part
 
     def load_oap(self):
         return self._read_ofml_part(ofml_part='oap', inp_descr=self.paths['oap'] / 'oap.inp_descr')
@@ -140,10 +149,8 @@ class Program:
                             ['string', 'string', 'string', 'string', 'string', 'string', 'string']],
             'resource.csv': [['name', 'type', 'param3', 'param4', 'resource_path'],
                              ['string', 'string', 'string', 'string', 'string', ]],
-
             'structure.csv': [['name', 'type', 'param3', 'param4', 'param5'],
                               ['string', 'string', 'string', 'string', 'string', ]],
-
             'text.csv': [['name', 'type', 'language', 'text'],
                          ['string', 'string', 'string', 'string']],
 
@@ -218,7 +225,7 @@ class Program:
     def featured_ofml_parts(self):
         return [_ for _, v in self.ofml_parts().items() if v['features'] is True]
 
-    def _read_ofml_part(self, **kwargs):
+    def _read_ofml_part(self, **kwargs) -> 'OFMLPart':
 
         inp_descr = kwargs.get('inp_descr', None)
         tables_definitions = kwargs.get('tables_definitions', None)
@@ -253,10 +260,10 @@ class TimestampFile:
         self.timestamp_read = timestamp.strftime("%Y-%m-%d-%H-%M-%S")
 
     def __str__(self):
-        return f'TimestampFile: path={self.path}'
+        return self.__repr__()
 
     def __repr__(self):
-        return self.__str__()
+        return f"TimestampFile({self.path})"
 
     @property
     def timestamp_modified(self) -> float:
@@ -312,7 +319,11 @@ class Table(TimestampFile):
         super().__init__(filepath)
         self.df: pd.DataFrame = df
         self.name = filepath.name
-        self.database_table_name = re.sub(r"\..*$", "", self.name)
+        if re.search("(de|en|fr|nl)\.sr$", self.name):
+            language = self.name[-5:-3]
+            self.database_table_name = f"go_{language}_sr"
+        else:
+            self.database_table_name = re.sub(r"\..*$", "", self.name)
 
     def database_column_type(self, column_name):
         dtype = str(self.df[column_name].dtype)
@@ -367,13 +378,17 @@ class OFMLPart:
         for name in self.filenames:
             self.read_table(name)
 
-    def read_table(self, filename, encoding="cp1252"):#"#'ANSI'):
+    def read_table(self, filename, encoding="cp1252", table_definition=None, sep=";"):
+        if table_definition is None:
+            table_definition = self.tables_definitions[filename]
+        else:
+            self.tables_definitions[filename] = table_definition
         table_path = self.path / filename
-        columns, dtypes = self.tables_definitions[filename]
+        columns, dtypes = table_definition
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
 
         table = re.sub(r'\..+$', '', filename)
-        self.tables[table] = read_table(table_path, columns, dtypes, encoding)
+        self.tables[table] = read_table(table_path, columns, dtypes, encoding, sep=sep)
         return self.tables[table]
 
     def table(self, name: str) -> Table:
@@ -387,20 +402,20 @@ class OFMLPart:
         return self.table(item)
 
 
-def read_table(filepath, names, dtype, encoding):
+def read_table(filepath, names, dtype, encoding, sep=";"):
     """
     given a filepath and the names from inp_descr read any table
     """
     on_bad_lines = 'warn'  # warn, skip, error
     try:
-        df = pd.read_csv(filepath, sep=';',
+        df = pd.read_csv(filepath, sep=sep,
                          header=None,
                          names=names,
                          dtype=dtype,
                          encoding=encoding,
                          comment='#',
                          on_bad_lines=on_bad_lines)
-    except (ValueError, FileNotFoundError, ) as e:
+    except (ValueError, FileNotFoundError,) as e:
         return NotAvailable(e)
 
     df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
@@ -448,3 +463,18 @@ def read_pdata_inp_descr(file_name):
     return result
 
 
+if __name__ == '__main__':
+    repo = Repository(root=Path("b:\Testumgebung\EasternGraphics"))
+    print(repo)
+    repo.read_profiles()
+    repo.load_program("quick3")
+
+    repo["quick3"].load_go()
+    for k, v in repo["quick3"].go.tables_definitions.items():
+        print(k)
+        print(v)
+    for k, v in repo["quick3"].go.tables.items():
+        print(k)
+        print(v)
+
+    print(repo["quick3"].go.table("quick3_de").df.to_string())

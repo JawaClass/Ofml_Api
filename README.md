@@ -7,3 +7,6 @@
 
 ### scheduler to schedule persist db task
 
+
+## run pytest
+### python -m pytest tests

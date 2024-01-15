@@ -1,10 +1,12 @@
 FROM python:3.11
 
-# container folder
+# install dependencies firstly to use Dockers caching
+COPY requirements.txt requirements.txt
+pip install -r requirements.txt
+# copy container folder
 WORKDIR /app
 COPY . /app
 
-RUN mkdir /mnt/knps_testumgebung && \
-pip install -r requirements.txt
+# RUN mkdir /mnt/knps_testumgebung && \
 
 CMD []
