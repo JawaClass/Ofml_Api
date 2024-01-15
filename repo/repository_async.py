@@ -1,4 +1,6 @@
 import asyncio
+import re
+
 from .repository import Repository, Program, Table, OFMLPart, NotAvailable
 
 
@@ -43,8 +45,10 @@ class ProgramAsync(Program):
 
     def on_ofml_part_loaded(self, ofml_part: OFMLPart):
         for name in ofml_part.filenames:
-
-            self.collected_files_to_read.append(asyncio.to_thread(ofml_part.read_table, name))
+            sep = ";"
+            if re.search("(de|en|fr|nl)\.sr$", name):
+                sep = "="
+            self.collected_files_to_read.append(asyncio.to_thread(ofml_part.read_table, name, sep=sep))
 
     async def load_all(self):
         return await asyncio.gather(

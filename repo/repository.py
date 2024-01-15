@@ -132,7 +132,7 @@ class Program:
     def load_go(self):
         ofml_part = self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr')
         if not isinstance(ofml_part, NotAvailable):
-            for language in ["de", "en", "fr", "nl", "xxxxx"]:
+            for language in ["de", "en", "fr", "nl"]:
                 ofml_part.read_table(f"{self.name}_{language}.sr",
                                      table_definition=[["key", "value"], ["string", "string"]],
                                      sep="=")
@@ -375,6 +375,7 @@ class OFMLPart:
         return f'OFMLPart name = {self.name}'
 
     def read_all_tables(self):
+        # TODO: sr files will be overwritten with ";" seperator...
         for name in self.filenames:
             self.read_table(name)
 
@@ -386,7 +387,7 @@ class OFMLPart:
         table_path = self.path / filename
         columns, dtypes = table_definition
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
-
+        print("read_table:: ", filename, sep)
         table = re.sub(r'\..+$', '', filename)
         self.tables[table] = read_table(table_path, columns, dtypes, encoding, sep=sep)
         return self.tables[table]

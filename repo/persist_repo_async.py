@@ -34,7 +34,7 @@ async def main(plaintext_path: str):
     persist_tasks: list[asyncio.Task] = []
 
     load_program_tasks: list[ProgramAsyncTask] = []
-    for name in repo.program_names():
+    for name in ["quick3"]:### repo.program_names():
         logger.debug(f"load program {name}")
         load_program_tasks.append(repo.load_program(
             name,
