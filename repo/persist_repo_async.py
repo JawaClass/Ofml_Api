@@ -13,14 +13,13 @@ PROD_ENV = r'\\w2_fs1\edv\knps-testumgebung\ofml_development\repository'
 ProgramAsyncTask = Coroutine[Any, Any, ProgramAsync]
 
 
-async def main(plaintext_path: str):
+async def main(plaintext_path: str, filter_program_names: [] = None):
     """
     reads all tables from repository @ plaintext_path asynchronously
     and writes all tables to database asynchronously
-
     """
     logger.debug(f"START PERSIST DB plaintext_path={plaintext_path}")
-
+    logger.debug(f"filter_program_names: {filter_program_names}")
     repo = RepositoryAsync(Path(plaintext_path))
 
     # establish db connection and read profiles
@@ -34,7 +33,13 @@ async def main(plaintext_path: str):
     persist_tasks: list[asyncio.Task] = []
 
     load_program_tasks: list[ProgramAsyncTask] = []
-    for name in repo.program_names():
+
+    program_names = repo.program_names()
+
+    if filter_program_names:
+        program_names = [_ for _ in program_names if _ in filter_program_names]
+
+    for name in program_names:
         logger.debug(f"load program {name}")
         load_program_tasks.append(repo.load_program(
             name,
@@ -71,23 +76,23 @@ async def main(plaintext_path: str):
     await db.update_misc(path=repo.root)
 
 
-def run_prod_env():
-    run_with_path(PROD_ENV)
+def run_prod_env(**kwargs):
+    run_with_path(PROD_ENV, **kwargs)
 
 
-def run_test_env():
-    run_with_path(TEST_ENV)
+def run_test_env(**kwargs):
+    run_with_path(TEST_ENV, **kwargs)
 
 
-def run_with_path(path: str):
+def run_with_path(path: str, **kwargs):
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logger.debug(f"run_prod_env starting now at {timestamp}")
     start = time.time()
-    asyncio.run(main(path))
+    asyncio.run(main(path, **kwargs))
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logger.debug(f"run_prod_env finished at {timestamp} took {round(time.time() - start, 2)}s")
 
 
 if __name__ == "__main__":
     print("works")
-    run_test_env()
+    run_prod_env(filter_program_names=["talos"])  # filter_program_names=["co2"]

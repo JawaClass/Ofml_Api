@@ -1,6 +1,4 @@
 import asyncio
-import re
-
 from .repository import Repository, Program, Table, OFMLPart, NotAvailable
 
 
@@ -40,15 +38,18 @@ class ProgramAsync(Program):
             if type(res) is OFMLPart:
                 self.on_ofml_part_loaded(res)
 
+    async def load_odb(self):
+        if self.contains_odb():
+            res = await asyncio.to_thread(super().load_odb)
+            if type(res) is OFMLPart:
+                self.on_ofml_part_loaded(res)
+
     def on_ofml_part_error(self, err: NotAvailable):
         pass
 
     def on_ofml_part_loaded(self, ofml_part: OFMLPart):
-        for name in ofml_part.filenames:
-            sep = ";"
-            if re.search("(de|en|fr|nl)\.sr$", name):
-                sep = "="
-            self.collected_files_to_read.append(asyncio.to_thread(ofml_part.read_table, name, sep=sep))
+        for name in ofml_part.filenames_from_tables_definitions:
+            self.collected_files_to_read.append(asyncio.to_thread(ofml_part.read_table, name))
 
     async def load_all(self):
         return await asyncio.gather(
@@ -56,7 +57,8 @@ class ProgramAsync(Program):
             self.load_oam(),
             self.load_oas(),
             self.load_go(),
-            self.load_oap()
+            self.load_oap(),
+            self.load_odb(),
         )
 
 

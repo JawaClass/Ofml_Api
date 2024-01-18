@@ -55,10 +55,10 @@ class AsyncDatabaseInterface:
                                       (program_name,))
                     await conn.commit()
                 except Exception as e:
-                    logger.error(f"persist_table failed {table.name} _ {table.database_table_name} in {program_name} | {e}")
+                    logger.error(f"persist_table DELETE failed (now skip) {table.name} _ {table.database_table_name} in {program_name} | {e}")
                     return
                 else:
-                    # logger.info(f"persist_table success {table.name} _ {table.database_table_name} in {program_name}")
+                    # logger.info(f"persist_table DELETE success {table.name} _ {table.database_table_name} in {program_name}")
                     pass
 
                 table.df.fillna(value='', inplace=True)
@@ -72,5 +72,15 @@ class AsyncDatabaseInterface:
                 data = table.df.values.tolist()
                 stmt = f"INSERT INTO {table.database_table_name} ({column_names}) VALUES ({value_placeholders});"
 
-                await cur.executemany(stmt, data)
+                try:
+                    await cur.executemany(stmt, data)
+                except Exception as e:
+                    logger.error(
+                        f"persist_table INSERT failed {table.name} _ {table.database_table_name} in {program_name} | {e}")
+                    # raise Exception from e
+                    raise e
+                else:
+                    logger.info(
+                        f"persist_table INSERT success {table.name} _ {table.database_table_name} in {program_name}")
+                    pass
                 return await conn.commit()
