@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from pathlib import Path
 import asyncio
@@ -54,7 +55,8 @@ async def main(plaintext_path: str, filter_program_names: [] = None):
             yield lst[i:i + n]
 
     # progress only subset at once
-    for chunk in chunked(load_program_tasks, 5):
+    chunk_size = 1  # 5
+    for chunk in chunked(load_program_tasks, chunk_size):
 
         chunked_programs = await asyncio.gather(*chunk)
 
@@ -63,11 +65,19 @@ async def main(plaintext_path: str, filter_program_names: [] = None):
             table: Table
             for table in p.all_tables:
                 if not table.df.empty:
+
+                    if table.ofml_part_name == "ocd" and not re.match(r"^(ocd_|opt)", table.name):
+                        continue
+
+                    # tasks run immediately
                     task: asyncio.Task = asyncio.create_task(
                         db.persist_table(table, program_name=p.name),
                         name=f"Persist {table.name} of {p.name}"
                     )
                     persist_tasks.append(task)
+            # wait for chunked programs to finish before progress to next
+            logger.debug("persist ...")
+            await asyncio.gather(*persist_tasks)
 
         del chunked_programs
 
@@ -95,4 +105,5 @@ def run_with_path(path: str, **kwargs):
 
 if __name__ == "__main__":
     print("works")
-    run_prod_env(filter_program_names=["talos"])  # filter_program_names=["co2"]
+    run_prod_env()  # filter_program_names=["co2"]
+    #  run with :: python -m repo.persist_repo_async

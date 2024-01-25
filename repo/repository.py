@@ -339,10 +339,11 @@ class ConfigFile(TimestampFile):
 
 class Table(TimestampFile):
 
-    def __init__(self, df: pd.DataFrame, filepath: Path):
+    def __init__(self, df: pd.DataFrame, filepath: Path, ofml_part_name: str):
         super().__init__(filepath)
         self.df: pd.DataFrame = df
-        self.name = filepath.name
+        self.name: str = filepath.name
+        self.ofml_part_name: str = ofml_part_name
         if re.search("(de|en|fr|nl)\.sr$", self.name):
             language = self.name[-5:-3]
             self.database_table_name = f"go_{language}_sr"
@@ -402,7 +403,11 @@ class OFMLPart:
         table_path = self.path / filename
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
         table = re.sub(r'\..+$', '', filename)
-        self.tables[table] = read_table(table_path, columns, dtypes, encoding, sep=sep)
+        quoting = csv.QUOTE_MINIMAL
+        # most tables we can remove the enclosing " but not in these
+        if table in {"funcs", "odb2d", "odb3d"}:
+            quoting = csv.QUOTE_NONE
+        self.tables[table] = read_table(table_path, columns, dtypes, encoding, sep=sep, quoting=quoting, ofml_part_name=self.name)
         return self.tables[table]
 
     def table(self, name: str) -> Table:
@@ -416,7 +421,7 @@ class OFMLPart:
         return self.table(item)
 
 
-def read_table(filepath, names, dtype, encoding, sep=";"):
+def read_table(filepath, names, dtype, encoding, ofml_part_name, sep=";", quoting=csv.QUOTE_MINIMAL):
     """
     given a filepath and the names from inp_descr read any table
     """
@@ -430,13 +435,16 @@ def read_table(filepath, names, dtype, encoding, sep=";"):
                          comment='#',
                          on_bad_lines=on_bad_lines,
                          # new (seems necessary, eg. for co2 funcs. otherwise removes trailing quotes)
-                         quoting=csv.QUOTE_NONE)
+                         # not a good idea because then ocd_propertytext etc. keep \"...\"
+                         # but is necessary for funcs otherwiese values "" get removed
+                         quoting=quoting
+                         )
     except (ValueError, FileNotFoundError,) as e:
         return NotAvailable(e)
     # map changes dtype of column to object
     # for now ok because object = string but not good
     df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
-    return Table(df, filepath)
+    return Table(df, filepath, ofml_part_name)
 
 
 def ofml_dtype_2_pandas_dtype(ofml_dtype):
@@ -485,39 +493,13 @@ if __name__ == '__main__':
     repo = Repository(root=Path("b:\Testumgebung\EasternGraphics"))
     print(repo)
     repo.read_profiles()
-    repo.load_program("co2")
+    repo.load_program("workplace")
+    repo["workplace"].load_odb()
+    repo["workplace"].odb.read_table("funcs.csv")
 
-    # repo["quick3"].load_go()
-    # for k, v in repo["quick3"].go.tables_definitions.items():
-    #     print(k)
-    #     print(v)
-    # print("loaded tables:::")
-    # for k, v in repo["quick3"].go.tables.items():
-    #     print(k)
-    #     print(v)
-    #
-    # repo["quick3"].go.read_all_tables()
-    # #print(repo["quick3"].go.table("quick3_de").df.to_string())
-    # print("loaded tables:::")
-    # for k, v in repo["quick3"].go.tables.items():
-    #     print(k)
-    #     print(v)
-    # print(repo["quick3"].go.table("quick3_de").df.to_string())
+    # print(repo["workplace"].odb.table("funcs").df.to_string())
+    # print(repo["workplace"].odb.table("funcs").df.dtypes)
 
-    repo["co2"].load_odb()
-    repo["co2"].odb.read_table("odb3d.csv")# read_all_tables()
-
-    # repo["quick3"].load_oam()
-    # repo["quick3"].oam.read_all_tables()
-    #
-    # print("ODB ___________________________________________")
-    # for t_name, table in repo["quick3"].odb.tables.items():
-    #     print(t_name)
-    #     print(table.df.to_string())
-    #
-    # print("OAM ___________________________________________")
-    # for t_name, table in repo["quick3"].oam.tables.items():
-    #     print(t_name)
-    #     print(table.df.to_string())
-    print(repo["co2"].odb.table("odb3d").df[["visible", "ctor"]].to_string())
-    print(repo["co2"].odb.table("odb3d").df.dtypes)
+    repo["workplace"].load_ocd()
+    repo["workplace"].ocd.read_table("ocd_relation.csv")
+    print(repo["workplace"].ocd.table("ocd_relation").df.to_string())

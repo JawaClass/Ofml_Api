@@ -55,6 +55,7 @@ class AsyncDatabaseInterface:
                                       (program_name,))
                     await conn.commit()
                 except Exception as e:
+
                     logger.error(f"persist_table DELETE failed (now skip) {table.name} _ {table.database_table_name} in {program_name} | {e}")
                     return
                 else:
