@@ -72,13 +72,16 @@ class RepositoryAsync(Repository):
     async def read_profiles(self):
         return await asyncio.to_thread(super().read_profiles)
 
-    async def load_program(self, program, keep_in_memory: bool = True, program_cls=None, **kwargs) -> ProgramAsync:
+    async def load_program(self, program, keep_in_memory: bool = True, program_cls=None, **kwargs) -> ProgramAsync | NotAvailable:
         result: ProgramAsync = await asyncio.to_thread(super().load_program,
                                                        **{
                                                            "program_name": program,
                                                            "keep_in_memory": keep_in_memory,
                                                            "program_cls": ProgramAsync
                                                        })
+        if isinstance(result, NotAvailable):
+
+            return result
 
         callback = kwargs.get("on_done", None)
         if callback:

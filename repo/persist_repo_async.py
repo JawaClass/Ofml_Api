@@ -5,6 +5,8 @@ import asyncio
 import time
 from loguru import logger
 from typing import Coroutine, Any, Generator
+
+from repo.repository import NotAvailable
 from .repository_async import RepositoryAsync, ProgramAsync, Table
 from .db_async import AsyncDatabaseInterface
 
@@ -61,6 +63,9 @@ async def main(plaintext_path: str, filter_program_names: [] = None):
         chunked_programs = await asyncio.gather(*chunk)
 
         for p in chunked_programs:
+            if isinstance(p, NotAvailable):
+                logger.warning(f"Skip not available Program {p}.")
+                continue
             logger.debug(f"persist all {len(p.all_tables)} tables of program {p.name}")
             table: Table
             for table in p.all_tables:

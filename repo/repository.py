@@ -4,7 +4,7 @@ import re
 import datetime
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 import pandas as pd
 
 
@@ -50,12 +50,19 @@ class Repository:
 
     def read_registry(self, program):
         registry_name = self.program_name2registry_name(program)
-        return ConfigFile(self.root / 'registry' / f'{registry_name}.cfg')
+        try:
+            return ConfigFile(self.root / 'registry' / f'{registry_name}.cfg')
+        except (ValueError, FileNotFoundError,) as e:
+            return NotAvailable(e)
 
-    def load_program(self, program_name: str, keep_in_memory: bool = True, program_cls=None):
+    def load_program(self, program_name: str, keep_in_memory: bool = True, program_cls=None) -> Union['Program', NotAvailable]:
         if program_cls is None:
             program_cls = Program
         reg = self.read_registry(program_name)
+
+        if isinstance(reg, NotAvailable):
+            return reg
+
         program = program_cls(registry=reg, root=self.root)
         if keep_in_memory:
             self.__programs[program_name] = program
