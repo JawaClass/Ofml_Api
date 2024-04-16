@@ -28,7 +28,7 @@ def job(ofml_repo_path: str):
         message = f"Update from {ofml_repo_path} was successfully"
         email_notifier.send("SUCCESS :: Update OFML Database", message)
         logger.info(message)
-    print_scheduled_jobs()
+    
 
 
 def seconds_to_hms(seconds):
@@ -38,11 +38,16 @@ def seconds_to_hms(seconds):
     return hours, minutes, round(seconds, 0)
 
 def run_loop(time_schedule: str, ofml_repo_path: str):
+    
+    job(ofml_repo_path)
+    return
+    
     schedule.every().day.at(time_schedule, "Europe/Berlin").do(job, ofml_repo_path=ofml_repo_path)
     logger.info(f'The provided time is: "{time_schedule}". Now is {datetime.now().strftime("%H:%M:%S")}.')
     print_scheduled_jobs()
     while True:
         schedule.run_pending()
+        print_scheduled_jobs()
         idle_seconds = schedule.idle_seconds()
         h, m, s = seconds_to_hms(idle_seconds)
         logger.info(f"sleep until next scheduled job: {idle_seconds} seconds. {h}h {m}m {s}s")

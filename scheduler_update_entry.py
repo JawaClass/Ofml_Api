@@ -2,8 +2,7 @@ import os.path
 import argparse
 import re
 from datetime import datetime
-from repo.persist_repo_async import run_with_path
-from scheduler_update_loop import run_loop
+from scheduler_update_loop import run_loop, job
 
 
 def is_valid_time_format(value):
@@ -22,18 +21,20 @@ parser = argparse.ArgumentParser(
     db once every day at the given time value in the format "HH:MM".
     """,
     usage="python scheduler_db_update.py time")
-parser.add_argument('time', type=str, help='Time value in the format "HH:MM"')
+# parser.add_argument('time', type=str, help='Time value in the format "HH:MM"')
 parser.add_argument('ofml_repo_path', type=str, help='Existing path to a ofml repo')
 args = parser.parse_args()
 
 
-if not is_valid_time_format(args.time):
-    print("Error: Invalid time format. Please use \"HH:MM\".")
-    exit(1)
+# if not is_valid_time_format(args.time):
+#     print("Error: Invalid time format. Please use \"HH:MM\".")
+#     exit(1)
 
 
 if not is_valid_ofml_repo_path(args.ofml_repo_path):
     print(f"Error: ofml_repo_path \"{args.ofml_repo_path}\" doesnt exist.")
     exit(1)
 
-run_loop(time_schedule=args.time, ofml_repo_path=args.ofml_repo_path)
+# run_loop(time_schedule=args.time, ofml_repo_path=args.ofml_repo_path)
+
+job(ofml_repo_path=args.ofml_repo_path)
