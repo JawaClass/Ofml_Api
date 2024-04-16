@@ -8,7 +8,7 @@ config_file = Path(os.path.dirname(os.path.abspath(__file__))) / 'config.ini'
 suc = config.read(config_file)
 logger.debug(f"config.read => {suc}")
 if not suc:
-    raise ValueError(f"config.ini was found at {config_file}. Provide this file based on config.ini.sample")
+    raise ValueError(f"No config.ini was found at {config_file}. Provide this file based on config.ini.sample")
 
 db_config = {
     "host": config.get('database', 'host'),
