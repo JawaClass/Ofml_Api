@@ -34,7 +34,7 @@ class Repository:
         return f"Repository {self.root} -> {self.__programs.items()}"
 
     def __init__(self, root: Path, **kwargs):
-        self.root = root
+        self.root = root if isinstance(root, Path) else Path(root)
 
         self.profiles = None
         self.__programs = OrderedDict()
