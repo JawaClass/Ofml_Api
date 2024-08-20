@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='ofml_api',
-    version="dev",
+    version="1",
     author='Fabian Grünwald',
     author_email='fabian.gruenwald@koenig-neurath.de',
     py_modules=find_packages(),
