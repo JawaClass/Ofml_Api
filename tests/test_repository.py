@@ -1,6 +1,6 @@
 from pathlib import Path
 import time
-from repo.repository import Repository, Program, OFMLPart, NotAvailable, Table
+from ofml_api.repository import Repository, Program, OFMLPart, NotAvailable, Table
 from pprint import pprint
 import pandas as pd
 

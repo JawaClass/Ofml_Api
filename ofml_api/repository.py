@@ -6,14 +6,10 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Optional, Dict, Union
 import pandas as pd
-
-from repo.util import NotAvailable, catch_file_exception
-
-__version__ = 'dev'
-
+from ofml_api.util import NotAvailable, catch_file_exception
+ 
 
 class Repository:
-
 
     def __init__(self, root: Path, manufacturer: str):
         self.root = root if isinstance(root, Path) else Path(root)
