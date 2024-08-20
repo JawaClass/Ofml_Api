@@ -4,41 +4,26 @@ import re
 import datetime
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Dict, Union
+from typing import Any, Callable, Optional, Dict, Union
 import pandas as pd
 
-
-def catch_file_exception(f):
-    def wrapper(*args, **kwargs):
-        try:
-            result = f(*args, **kwargs)
-        except (OSError, IOError) as e:
-            return NotAvailable(e)
-        return result
-
-    return wrapper
+from repo.util import NotAvailable, catch_file_exception
 
 
-class NotAvailable:
-
-    def __init__(self, error):
-        self.error = error
-
-    def __repr__(self):
-        return f"NotAvailable({self.error})"
 
 
 class Repository:
 
-    def __str__(self):
-        return f"Repository {self.root} -> {self.__programs.items()}"
 
-    def __init__(self, root: Path, **kwargs):
+    def __init__(self, root: Path):
         self.root = root if isinstance(root, Path) else Path(root)
 
         self.profiles = None
-        self.__programs = OrderedDict()
-
+        self.__programs = OrderedDict() 
+        
+    def __str__(self):
+        return f"Repository(root={self.root}, programs={self.__programs.items()})"
+    
     def programs(self):
         return self.__programs.values()
 
@@ -48,17 +33,18 @@ class Repository:
     def read_profiles(self):
         self.profiles = ConfigFile(self.root / 'profiles' / 'kn.cfg')
 
-    def read_registry(self, program):
-        registry_name = self.program_name2registry_name(program)
+    def __read_registry(self, program):
         try:
+            registry_name = self.program_name2registry_name(program)
             return ConfigFile(self.root / 'registry' / f'{registry_name}.cfg')
         except (ValueError, FileNotFoundError,) as e:
             return NotAvailable(e)
 
     def load_program(self, program_name: str, keep_in_memory: bool = True, program_cls=None) -> Union['Program', NotAvailable]:
+        print("load_program...", program_cls)
         if program_cls is None:
             program_cls = Program
-        reg = self.read_registry(program_name)
+        reg = self.__read_registry(program_name)
 
         if isinstance(reg, NotAvailable):
             return reg
@@ -74,13 +60,14 @@ class Repository:
         return ['_'.join(cfg.split('_')[1:-2]) for cfg, active in self.profiles.config['[lib:kn]'].items() if active]
 
     def program_name2registry_name(self, program):
-        for k, v in self.profiles.config['[lib:kn]'].items():
+        for k in self.profiles.config['[lib:kn]']:
 
             profile_entry = '_'.join(k.split('_')[1:-2])
 
-            if program == profile_entry:
+            if profile_entry == program :
                 return k
-        raise NotImplementedError(f'Program {program} has no registry entry in profiles')
+            
+        raise ValueError(f'Program {program} has no registry entry in profiles')
 
 
 class Program:
@@ -93,73 +80,186 @@ class Program:
         self.program_path = self.root / 'kn' / self.name
 
         self.paths = {
-            'ocd': self.root / self.registry['productdb_path'] if self.contains_ocd() else None,
-            'oam': self.root / self.registry['oam_path'] if self.contains_oam() else None,
-            'oap': self.program_path / 'DE' / '2' / 'oap' if self.contains_oap() else None,
-            'oas': self.program_path / 'DE' / '2' / 'cat' if self.contains_oas() else None,
-            'go': self.program_path / '2' if self.contains_go() else None,
-            'odb': self.program_path / '2' if self.contains_odb() else None
+            'ocd': self.root / self.registry['productdb_path'] if self.contains_ofml_part("ocd") else None,
+            'oam': self.root / self.registry['oam_path'] if self.contains_ofml_part("oam") else None,
+            'oap': self.program_path / 'DE' / '2' / 'oap' if self.contains_ofml_part("oap") else None,
+            'oas': self.program_path / 'DE' / '2' / 'cat' if self.contains_ofml_part("oas") else None,
+            'go': self.program_path / '2' if self.contains_ofml_part("go") else None,
+            'odb': self.program_path / '2' if self.contains_ofml_part("odb") else None
         }
 
-        self.ocd: Optional[OFMLPart] = None
-        self.oam: Optional[OFMLPart] = None
-        self.go: Optional[OFMLPart] = None
-        self.oas: Optional[OFMLPart] = None
-        self.oap: Optional[OFMLPart] = None
-        self.odb: Optional[OFMLPart] = None
+        self.parts: Dict[str, Optional[OFMLPart]] = {
+            "ocd": None,
+            "oam": None,
+            "go": None,
+            "oas": None,
+            "oap": None,   
+            "odb": None,   
+        }
+    
+    @property
+    def ocd(self):
+        return self.parts["ocd"]
+    
+    @ocd.setter
+    def ocd(self, value):
+        self.parts["ocd"] = value 
 
     @property
+    def oam(self):
+        return self.parts["oam"]
+    
+    @oam.setter
+    def oam(self, value):
+        self.parts["oam"] = value 
+    
+    @property
+    def go(self):
+        return self.parts["go"]
+    
+    @go.setter
+    def go(self, value):
+        self.parts["go"] = value 
+        
+    @property
+    def oas(self):
+        return self.parts["oas"]
+
+    @oas.setter
+    def oas(self, value):
+        self.parts["oas"] = value 
+        
+    @property
+    def oap(self):
+        return self.parts["oap"]
+    
+    @oap.setter
+    def oap(self, value):
+        self.parts["oap"] = value 
+        
+    @property
+    def odb(self):
+        return self.parts["odb"]
+    
+    @odb.setter
+    def odb(self, value):
+        self.parts["odb"] = value 
+        
     def all_tables(self):
         tables = []
-        if self.is_ocd_available():
-            for table in self.ocd.tables.values():
-                if type(table) is Table:
-                    tables.append(table)
-        if self.is_oas_available():
-            for table in self.oas.tables.values():
-                if type(table) is Table:
-                    tables.append(table)
-        if self.is_oam_available():
-            for table in self.oam.tables.values():
-                if type(table) is Table:
-                    tables.append(table)
-        if self.is_go_available():
-            for table in self.go.tables.values():
-                if type(table) is Table:
-                    tables.append(table)
-        if self.is_oap_available():
-            for table in self.oap.tables.values():
-                if type(table) is Table:
-                    tables.append(table)
-        if self.is_odb_available():
-            for table in self.odb.tables.values():
-                if type(table) is Table:
-                    tables.append(table)
+        if self.is_ofml_part_available("ocd"):
+            tables.extend([table for table in self.ocd.tables.values() if isinstance(table, Table)])
+        if self.is_ofml_part_available("oas"):
+            tables.extend([table for table in self.oas.tables.values() if isinstance(table, Table)])
+        if self.is_ofml_part_available("oam"):
+            tables.extend([table for table in self.oam.tables.values() if isinstance(table, Table)])
+        if self.is_ofml_part_available("go"):
+            tables.extend([table for table in self.go.tables.values() if isinstance(table, Table)])
+        if self.is_ofml_part_available("oap"):
+            tables.extend([table for table in self.oap.tables.values() if isinstance(table, Table)])
+        if self.is_ofml_part_available("odb"):
+            tables.extend([table for table in self.odb.tables.values() if isinstance(table, Table)])
         return tables
+     
+    
+    def load_ofml_part(self, ofml_part: str, *args, **kwargs) -> 'OFMLPart':
+        return {
+          "ocd": self.__load_ocd,
+          "oam": self.__load_oam,
+          "go": self.__load_go,
+          "oap": self.__load_oap,
+          "oas": self.__load_oas,
+          "odb": self.__load_odb,
+        }[ofml_part](*args, **kwargs)
+        
+    def contains_ofml_part(self, ofml_part: str, *args, **kwargs) -> bool:
+        return {
+          "ocd": self.__contains_ocd,
+          "oam": self.__contains_oam,
+          "go": self.__contains_go,
+          "oap": self.__contains_oap,
+          "oas": self.__contains_oas,
+          "odb": self.__contains_odb,
+        }[ofml_part](*args, **kwargs)
+    
+    def is_ofml_part_available(self, ofml_part: str, *args, **kwargs) -> bool:
+        return {
+          "ocd": self.__is_ocd_available,
+          "oam": self.__is_oam_available,
+          "go": self.__is_go_available,
+          "oap": self.__is_oap_available,
+          "oas": self.__is_oas_available,
+          "odb": self.__is_odb_available,
+        }[ofml_part](*args, **kwargs)
+    
 
-    def load_ocd(self):
+    def load_all_ofml_parts(self, *args, **kwargs):
+        print("Program::load_all_ofml_parts", "args:", args, "kwargs:", kwargs)
+        for part in self.parts:
+            if self.contains_ofml_part(part):
+                self.load_ofml_part(part)
+
+    def __is_ocd_available(self):
+        return isinstance(self.ocd, OFMLPart)
+
+    def __is_oam_available(self):
+        return isinstance(self.oam, OFMLPart)
+
+    def __is_oas_available(self):
+        return isinstance(self.oas, OFMLPart)
+
+    def __is_go_available(self):
+        return isinstance(self.go, OFMLPart)
+
+    def __is_odb_available(self):
+        return isinstance(self.odb, OFMLPart)
+
+    def __is_oap_available(self):
+        return isinstance(self.oap, OFMLPart)
+    
+    def __contains_ocd(self):
+        return 'productdb_path' in self.registry
+
+    def __contains_oam(self):
+        return 'oam_path' in self.registry
+
+    def __contains_go(self):
+        return 'series_type' in self.registry and 'meta_type' in self.registry
+
+    def __contains_odb(self):
+        odb_path = self.root / f'kn/{self.name}/2'
+        return odb_path.exists()
+
+    def __contains_oap(self):
+        oap_path = self.root / f'kn/{self.name}/DE/2/oap'
+        return oap_path.exists()
+
+    def __contains_oas(self):
+        return 'type' in self.registry and self.registry.get('cat_type', None) in ['XCF']
+
+    def __load_ocd(self):
         return self._read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr', name="ocd")
 
-    def load_oam(self):
+    def __load_oam(self):
         return self._read_ofml_part(ofml_part='oam', inp_descr=self.paths['oam'] / 'oam.inp_descr', name="oam")
 
-    def load_odb(self):
+    def __load_odb(self):
         return self._read_ofml_part(ofml_part='odb', inp_descr=self.paths['odb'] / 'odb.inp_descr', name="odb")
 
-    def load_go(self):
+    def __load_go(self, languages=["de", "en", "fr", "nl"]):
         ofml_part = self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr', name="go")
 
         if not isinstance(ofml_part, NotAvailable):
-            for language in ["de", "en", "fr", "nl"]:
+            for language in languages:
                 ofml_part.tables_definitions[f"{self.name}_{language}.sr"] = [["key", "value"],
                                                                               ["string", "string"],
                                                                               "="]
         return ofml_part
 
-    def load_oap(self):
+    def __load_oap(self):
         return self._read_ofml_part(ofml_part='oap', inp_descr=self.paths['oap'] / 'oap.inp_descr', name="oap")
 
-    def load_oas(self):
+    def __load_oas(self):
 
         path = self.paths['oas']
         tables_definitions = OrderedDict(**{
@@ -180,78 +280,12 @@ class Program:
 
         return self._read_ofml_part(ofml_part='oas', tables_definitions=tables_definitions, path=path, name="oas")
 
-    def load_ofml_part(self, ofml_part):
-        if ofml_part == 'ocd':
-            self.load_ocd()
-        if ofml_part == 'oam':
-            self.load_oam()
-        if ofml_part == 'go':
-            self.load_go()
-        if ofml_part == 'oap':
-            self.load_oap()
-        if ofml_part == 'oas':
-            self.load_oas()
-
-    def is_ocd_available(self):
-        return type(self.ocd) is OFMLPart
-
-    def is_oam_available(self):
-        return type(self.oam) is OFMLPart
-
-    def is_oas_available(self):
-        return type(self.oas) is OFMLPart
-
-    def is_go_available(self):
-        return type(self.go) is OFMLPart
-
-    def is_odb_available(self):
-        return type(self.odb) is OFMLPart
-
-    def is_oap_available(self):
-        return type(self.oap) is OFMLPart
-
-    def load_all(self):
-        if self.contains_ocd():
-            self.load_ocd()
-        if self.contains_oam():
-            self.load_oam()
-        if self.contains_oas():
-            self.load_oas()
-        if self.contains_go():
-            self.load_go()
-        if self.contains_oap():
-            self.load_oap()
-        if self.contains_odb():
-            self.load_odb()
-
-    def contains_ocd(self):
-        return 'productdb_path' in self.registry
-
-    def contains_oam(self):
-        return 'oam_path' in self.registry
-
-    def contains_go(self):
-        return 'series_type' in self.registry and 'meta_type' in self.registry
-
-    def contains_odb(self):
-        odb_path = self.root / f'kn/{self.name}/2'
-        return odb_path.exists()
-
-    def contains_oap(self):
-        oap_path = self.root / f'kn/{self.name}/DE/2/oap'
-        return oap_path.exists()
-
-    def contains_oas(self):
-        return 'type' in self.registry and self.registry.get('cat_type', None) in ['XCF']
 
     def ofml_parts(self):
         return {
-            'ocd': {'features': self.contains_ocd(), 'loaded': bool(self.ocd)},
-            'oam': {'features': self.contains_oam(), 'loaded': bool(self.oam)},
-            'go': {'features': self.contains_go(), 'loaded': bool(self.go)},
-            'oas': {'features': self.contains_oas(), 'loaded': bool(self.oas)},
-            'oap': {'features': self.contains_oap(), 'loaded': bool(self.oap)},
-        }
+            part: {'features': self.contains_ofml_part(part), 'loaded': bool(self.parts[part])}
+            for part in self.parts
+            }
 
     def featured_ofml_parts(self):
         return [_ for _, v in self.ofml_parts().items() if v['features'] is True]
@@ -276,7 +310,7 @@ class Program:
         return self.__getattribute__(ofml_part)
 
     def __str__(self):
-        return f'Program: {self.name}, OFML Parts: {self.ofml_parts()}'
+        return f'Program(name={self.name}, ofml_parth={self.ofml_parts()})'
 
     def __repr__(self):
         return self.__str__()
@@ -294,7 +328,7 @@ class TimestampFile:
         return self.__repr__()
 
     def __repr__(self):
-        return f"TimestampFile({self.path})"
+        return f"TimestampFile(path={self.path})"
 
     @property
     def timestamp_modified(self) -> float:
@@ -351,7 +385,7 @@ class Table(TimestampFile):
         self.df: pd.DataFrame = df
         self.name: str = filepath.name
         self.ofml_part_name: str = ofml_part_name
-        if re.search("(de|en|fr|nl)\.sr$", self.name):
+        if re.search(r"(de|en|fr|nl)\.sr$", self.name):
             language = self.name[-5:-3]
             self.database_table_name = f"go_{language}_sr"
         else:
@@ -387,7 +421,7 @@ class OFMLPart:
         self.path: Path = kwargs['path']
         self.name = kwargs['name']
         self.tables_definitions = kwargs['tables_definitions']
-        self.tables: Dict[str, Table] = OrderedDict()
+        self.tables: Dict[str, Union[Table, NotAvailable]] = OrderedDict()
 
     @property
     def filepaths_from_tables_definitions(self):
@@ -398,15 +432,18 @@ class OFMLPart:
         return {_ for _ in self.tables_definitions.keys()}
 
     def __repr__(self):
-        return f'OFMLPart name = {self.name}'
+        return f'OFMLPart(name={self.name}, path={self.path})'
 
     def read_all_tables(self):
         # TODO: sr files will be overwritten with ";" seperator...
         for name in self.filenames_from_tables_definitions:
             self.read_table(name)
 
-    def read_table(self, filename, encoding="cp1252"):
-        columns, dtypes, sep = self.tables_definitions[filename]
+    def read_table(self, filename: str, encoding="cp1252") -> Union[Table, NotAvailable]:
+        try:
+            columns, dtypes, sep = self.tables_definitions[filename]
+        except KeyError:
+            return NotAvailable(KeyError(f"key '{filename}' does not exist in tables_definitions"))
         table_path = self.path / filename
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
         table = re.sub(r'\..+$', '', filename)
@@ -417,11 +454,11 @@ class OFMLPart:
         self.tables[table] = read_table(table_path, columns, dtypes, encoding, sep=sep, quoting=quoting, ofml_part_name=self.name)
         return self.tables[table]
 
-    def table(self, name: str) -> Table:
+    def table(self, name: str) -> Union[Table, NotAvailable]:
         name = re.sub(r'\..+$', '', name)
         return self.tables[name]
 
-    def is_table_available(self, name):
+    def is_table_available(self, name: str):
         return type(self.table(name)) is not NotAvailable
 
     def __getitem__(self, item):
@@ -495,18 +532,4 @@ def read_pdata_inp_descr(file_name):
                 result[table_name][2] = delimiter
     return result
 
-
-if __name__ == '__main__':
-    repo = Repository(root=Path("b:\Testumgebung\EasternGraphics"))
-    print(repo)
-    repo.read_profiles()
-    repo.load_program("workplace")
-    repo["workplace"].load_odb()
-    repo["workplace"].odb.read_table("funcs.csv")
-
-    # print(repo["workplace"].odb.table("funcs").df.to_string())
-    # print(repo["workplace"].odb.table("funcs").df.dtypes)
-
-    repo["workplace"].load_ocd()
-    repo["workplace"].ocd.read_table("ocd_relation.csv")
-    print(repo["workplace"].ocd.table("ocd_relation").df.to_string())
+ 
