@@ -8,6 +8,7 @@ setup(
     author='Fabian Grünwald',
     author_email='fabian.gruenwald@koenig-neurath.de',
     # py_modules=find_packages(),
-    packages=find_packages(),
+    # packages=find_packages(),
+    packages=["ofml_api"],
     install_requires=["pandas"]
 )
