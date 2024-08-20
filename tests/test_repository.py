@@ -7,7 +7,7 @@ import pandas as pd
 REPO_ROOT = Path(r"b:Testumgebung/EasternGraphics")
 
 def test_load_repo():
-    repo = Repository(root=REPO_ROOT)
+    repo = Repository(root=REPO_ROOT, manufacturer="kn")
     assert not repo.profiles
     repo.read_profiles()
     assert repo.profiles
@@ -23,14 +23,14 @@ def test_load_repo():
     
 
 def test_program_not_available():
-    repo = Repository(root=REPO_ROOT)
+    repo = Repository(root=REPO_ROOT, manufacturer="kn")
     repo.read_profiles()
     program = repo.load_program("NOT_AVAILABLE_PROGRAM_NAME")
     assert isinstance(program, NotAvailable)
 
 
 def test_table_not_available():
-    repo = Repository(root=REPO_ROOT)
+    repo = Repository(root=REPO_ROOT, manufacturer="kn")
     repo.read_profiles()
     program = repo.load_program("talos")
     program.load_ofml_part("ocd")
@@ -39,7 +39,7 @@ def test_table_not_available():
     
 
 def test_load_all():
-    repo = Repository(root=REPO_ROOT)
+    repo = Repository(root=REPO_ROOT, manufacturer="kn")
     repo.read_profiles()
     repo.load_program("talos")
     talos = repo["talos"]

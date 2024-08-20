@@ -10,3 +10,6 @@ venv/
 
 # ingore the config.ini with sensitive information
 config.ini
+
+#
+/ofml_api.egg-info

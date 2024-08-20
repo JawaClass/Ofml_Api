@@ -9,15 +9,15 @@ import pandas as pd
 
 from repo.util import NotAvailable, catch_file_exception
 
-
+__version__ = 'dev'
 
 
 class Repository:
 
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, manufacturer: str):
         self.root = root if isinstance(root, Path) else Path(root)
-
+        self.manufacturer = manufacturer
         self.profiles = None
         self.__programs = OrderedDict() 
         
@@ -31,25 +31,22 @@ class Repository:
         return self.__programs[program]
 
     def read_profiles(self):
-        self.profiles = ConfigFile(self.root / 'profiles' / 'kn.cfg')
+        self.profiles = ConfigFile(self.root / "profiles" / f"{self.manufacturer}.cfg")
 
     def __read_registry(self, program):
         try:
             registry_name = self.program_name2registry_name(program)
-            return ConfigFile(self.root / 'registry' / f'{registry_name}.cfg')
+            return ConfigFile(self.root / 'registry' / f"{registry_name}.cfg")
         except (ValueError, FileNotFoundError,) as e:
             return NotAvailable(e)
 
-    def load_program(self, program_name: str, keep_in_memory: bool = True, program_cls=None) -> Union['Program', NotAvailable]:
-        print("load_program...", program_cls)
-        if program_cls is None:
-            program_cls = Program
+    def load_program(self, program_name: str, keep_in_memory: bool = True, region: str = "DE") -> Union['Program', NotAvailable]: 
         reg = self.__read_registry(program_name)
 
         if isinstance(reg, NotAvailable):
             return reg
 
-        program = program_cls(registry=reg, root=self.root)
+        program = Program(registry=reg, root=self.root, manufacturer=self.manufacturer, region=region)
         if keep_in_memory:
             self.__programs[program_name] = program
         return program
@@ -57,35 +54,36 @@ class Repository:
     def program_names(self):
         if self.profiles is None:
             raise ValueError("First read the profiles file")
-        return ['_'.join(cfg.split('_')[1:-2]) for cfg, active in self.profiles.config['[lib:kn]'].items() if active]
+        return ["_".join(cfg.split("_")[1:-2]) for cfg, active in self.profiles.config[f"[lib:{self.manufacturer}]"].items() if active]
 
     def program_name2registry_name(self, program):
-        for k in self.profiles.config['[lib:kn]']:
-
-            profile_entry = '_'.join(k.split('_')[1:-2])
-
+        for k in self.profiles.config[f"[lib:{self.manufacturer}]"]:
+            profile_entry = "_".join(k.split("_")[1:-2])
             if profile_entry == program :
                 return k
-            
         raise ValueError(f'Program {program} has no registry entry in profiles')
 
 
 class Program:
 
-    def __init__(self, **kwargs):
-        self.registry: ConfigFile = kwargs['registry']
-        self.root: Path = kwargs['root']
-        self.name: str = self.registry['program']
-
-        self.program_path = self.root / 'kn' / self.name
-
+    def __init__(self,
+                 registry: "ConfigFile",
+                 root: Path,
+                 manufacturer: str,
+                 region: str):
+        self.registry: ConfigFile = registry
+        self.root: Path = root
+        self.name: str = self.registry["program"]
+        self.manufacturer = manufacturer
+        self.region = region
+        self.program_path = self.root / self.manufacturer / self.name
         self.paths = {
-            'ocd': self.root / self.registry['productdb_path'] if self.contains_ofml_part("ocd") else None,
-            'oam': self.root / self.registry['oam_path'] if self.contains_ofml_part("oam") else None,
-            'oap': self.program_path / 'DE' / '2' / 'oap' if self.contains_ofml_part("oap") else None,
-            'oas': self.program_path / 'DE' / '2' / 'cat' if self.contains_ofml_part("oas") else None,
-            'go': self.program_path / '2' if self.contains_ofml_part("go") else None,
-            'odb': self.program_path / '2' if self.contains_ofml_part("odb") else None
+            'ocd': self.root / self.registry["productdb_path"] if self.contains_ofml_part("ocd") else None,
+            'oam': self.root / self.registry["oam_path"] if self.contains_ofml_part("oam") else None,
+            'oap': self.program_path / self.region / "2" / "oap" if self.contains_ofml_part("oap") else None,
+            'oas': self.program_path / self.region / "2" / "cat" if self.contains_ofml_part("oas") else None,
+            'go': self.program_path / "2" if self.contains_ofml_part("go") else None,
+            'odb': self.program_path / "2" if self.contains_ofml_part("odb") else None
         }
 
         self.parts: Dict[str, Optional[OFMLPart]] = {
@@ -193,8 +191,7 @@ class Program:
         }[ofml_part](*args, **kwargs)
     
 
-    def load_all_ofml_parts(self, *args, **kwargs):
-        print("Program::load_all_ofml_parts", "args:", args, "kwargs:", kwargs)
+    def load_all_ofml_parts(self):
         for part in self.parts:
             if self.contains_ofml_part(part):
                 self.load_ofml_part(part)
@@ -218,36 +215,36 @@ class Program:
         return isinstance(self.oap, OFMLPart)
     
     def __contains_ocd(self):
-        return 'productdb_path' in self.registry
+        return "productdb_path" in self.registry
 
     def __contains_oam(self):
-        return 'oam_path' in self.registry
+        return "oam_path" in self.registry
 
     def __contains_go(self):
-        return 'series_type' in self.registry and 'meta_type' in self.registry
+        return "series_type" in self.registry and "meta_type" in self.registry
 
     def __contains_odb(self):
-        odb_path = self.root / f'kn/{self.name}/2'
+        odb_path = self.root / f"{self.manufacturer}/{self.name}/2"
         return odb_path.exists()
 
     def __contains_oap(self):
-        oap_path = self.root / f'kn/{self.name}/DE/2/oap'
+        oap_path = self.root / f"{self.manufacturer}/{self.name}/{self.region}/2/oap"
         return oap_path.exists()
 
     def __contains_oas(self):
-        return 'type' in self.registry and self.registry.get('cat_type', None) in ['XCF']
+        return "type" in self.registry and self.registry.get("cat_type", None) in ["XCF"]
 
     def __load_ocd(self):
-        return self._read_ofml_part(ofml_part='ocd', inp_descr=self.paths['ocd'] / 'pdata.inp_descr', name="ocd")
+        return self._read_ofml_part(ofml_part="ocd", inp_descr=self.paths["ocd"] / "pdata.inp_descr", name="ocd")
 
     def __load_oam(self):
-        return self._read_ofml_part(ofml_part='oam', inp_descr=self.paths['oam'] / 'oam.inp_descr', name="oam")
+        return self._read_ofml_part(ofml_part="oam", inp_descr=self.paths["oam"] / "oam.inp_descr", name="oam")
 
     def __load_odb(self):
-        return self._read_ofml_part(ofml_part='odb', inp_descr=self.paths['odb'] / 'odb.inp_descr', name="odb")
+        return self._read_ofml_part(ofml_part="odb", inp_descr=self.paths["odb"] / "odb.inp_descr", name="odb")
 
     def __load_go(self, languages=["de", "en", "fr", "nl"]):
-        ofml_part = self._read_ofml_part(ofml_part='go', inp_descr=self.paths['go'] / 'mt.inp_descr', name="go")
+        ofml_part = self._read_ofml_part(ofml_part="go", inp_descr=self.paths["go"] / "mt.inp_descr", name="go")
 
         if not isinstance(ofml_part, NotAvailable):
             for language in languages:
@@ -257,11 +254,11 @@ class Program:
         return ofml_part
 
     def __load_oap(self):
-        return self._read_ofml_part(ofml_part='oap', inp_descr=self.paths['oap'] / 'oap.inp_descr', name="oap")
+        return self._read_ofml_part(ofml_part='oap', inp_descr=self.paths["oap"] / "oap.inp_descr", name="oap")
 
     def __load_oas(self):
 
-        path = self.paths['oas']
+        path = self.paths["oas"]
         tables_definitions = OrderedDict(**{
             'article.csv': [['name', 'type', 'param3', 'param4', 'param5', 'param6', 'program'],
                             ['string', 'string', 'string', 'string', 'string', 'string', 'string'],

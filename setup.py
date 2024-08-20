@@ -1,0 +1,12 @@
+from setuptools import setup, find_packages
+
+from repo.repository import __version__
+
+setup(
+    name='ofml_api',
+    version=__version__,
+    author='Fabian Grünwald',
+    author_email='fabian.gruenwald@koenig-neurath.de',
+    py_modules=find_packages(),
+    install_requires=["pandas"]
+)
