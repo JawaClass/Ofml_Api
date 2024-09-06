@@ -36,11 +36,14 @@ class Repository:
         except (ValueError, FileNotFoundError,) as e:
             return NotAvailable(e)
 
-    def load_program(self, program_name: str, keep_in_memory: bool = True, region: str = "DE") -> Union['Program', NotAvailable]: 
+    def load_program(self, program_name: str, keep_in_memory: bool = True, region: Optional[str] = None) -> Union['Program', NotAvailable]: 
         reg = self.__read_registry(program_name)
 
         if isinstance(reg, NotAvailable):
             return reg
+        
+        if region is None:
+            region = reg.get("distribution_region").strip()
 
         program = Program(registry=reg, root=self.root, manufacturer=self.manufacturer, region=region)
         if keep_in_memory:
@@ -347,7 +350,7 @@ class ConfigFile(TimestampFile):
     def __getitem__(self, item):
         return self.config[item]
 
-    def get(self, *args, **kwargs):
+    def get(self, *args, **kwargs) -> Optional[str]:
         return self.config.get(*args, **kwargs)
 
     def read(self):

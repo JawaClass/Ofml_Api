@@ -4,7 +4,8 @@ from ofml_api.repository import Repository, Program, OFMLPart, NotAvailable, Tab
 from pprint import pprint
 import pandas as pd
 
-REPO_ROOT = Path(r"b:Testumgebung/EasternGraphics")
+# REPO_ROOT = Path(r"b:Testumgebung/EasternGraphics")
+REPO_ROOT = Path(r"/mnt/knps_testumgebung/Testumgebung/EasternGraphics")
 
 def test_load_repo():
     repo = Repository(root=REPO_ROOT, manufacturer="kn")
