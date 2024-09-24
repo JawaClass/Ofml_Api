@@ -367,6 +367,8 @@ class ConfigFile(TimestampFile):
 
                 if re.match('.+=.+', _):
                     k, v = _.split('=')
+                    k = k.strip()
+                    v = v.strip()
                     if section:
                         d[section][k] = v
                     else:
