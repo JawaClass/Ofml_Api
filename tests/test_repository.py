@@ -7,6 +7,7 @@ import pandas as pd
 # REPO_ROOT = Path(r"b:Testumgebung/EasternGraphics")
 REPO_ROOT = Path(r"/mnt/knps_testumgebung/Testumgebung/EasternGraphics")
 
+
 def test_load_repo():
     repo = Repository(root=REPO_ROOT, manufacturer="kn")
     assert not repo.profiles
@@ -17,11 +18,11 @@ def test_load_repo():
     repo.load_program("talos")
     assert len(repo.programs()) == 1
     talos = repo["talos"]
-    assert isinstance(talos, Program)    
+    assert isinstance(talos, Program)
     assert talos.contains_ofml_part("ocd")
     ocd = talos.load_ofml_part("ocd")
     assert isinstance(ocd, OFMLPart)
-    
+
 
 def test_program_not_available():
     repo = Repository(root=REPO_ROOT, manufacturer="kn")
@@ -37,14 +38,14 @@ def test_table_not_available():
     program.load_ofml_part("ocd")
     table = program.ocd.read_table("NOT_AVAILABLE_TABLE_NAME")
     assert isinstance(table, NotAvailable)
-    
+
 
 def test_load_all():
     repo = Repository(root=REPO_ROOT, manufacturer="kn")
     repo.read_profiles()
     repo.load_program("talos")
     talos = repo["talos"]
-    assert talos.featured_ofml_parts() == ['ocd', 'oam', 'go', 'oap', 'odb']
+    assert talos.featured_ofml_parts() == ["ocd", "oam", "go", "oap", "odb"]
     talos.load_all_ofml_parts()
     assert isinstance(talos.ocd, OFMLPart)
     assert isinstance(talos.oam, OFMLPart)
@@ -56,7 +57,5 @@ def test_load_all():
     assert isinstance(ocd_article, Table)
     table = talos.ocd.read_table("ocd_article222.csv")
     assert isinstance(table, NotAvailable)
-    assert len(talos.ocd.tables) == 1 
+    assert len(talos.ocd.tables) == 1
     assert isinstance(talos.ocd.table("ocd_article").df, pd.DataFrame)
-    
-   
