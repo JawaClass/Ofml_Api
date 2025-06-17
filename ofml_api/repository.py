@@ -11,7 +11,9 @@ from typing import Any, Callable, Literal, Optional, Dict, Sequence, Union, over
 import pandas as pd  # type: ignore
 from ofml_api.util import NotAvailable, catch_file_exception
 
+
 type OFMLPartTypes = Literal["ocd", "oam", "go", "oap", "oas", "odb"]
+OFML_PARTS: tuple[OFMLPartTypes, ...] = ("ocd", "oam", "go", "oap", "oas", "odb")
 
 
 class Repository:
