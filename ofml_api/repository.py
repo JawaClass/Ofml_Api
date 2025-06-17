@@ -4,8 +4,8 @@ import re
 import datetime
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Dict, Union
-import pandas as pd
+from typing import Any, Callable, Literal, Optional, Dict, Sequence, Union, overload
+import pandas as pd  # type: ignore
 from ofml_api.util import NotAvailable, catch_file_exception
 
 
@@ -15,7 +15,7 @@ class Repository:
         self.root = root if isinstance(root, Path) else Path(root)
         self.manufacturer = manufacturer
         self.profiles = None
-        self.__programs = OrderedDict()
+        self.__programs = OrderedDict[str, Program]()
 
     def __str__(self):
         return f"Repository(root={self.root}, programs={self.__programs.items()})"
@@ -51,7 +51,7 @@ class Repository:
             return reg
 
         if region is None:
-            region = reg.get("distribution_region").strip()
+            region = reg.get_string("distribution_region").strip()
 
         program = Program(
             registry=reg, root=self.root, manufacturer=self.manufacturer, region=region
@@ -63,16 +63,17 @@ class Repository:
     def program_names(self):
         if self.profiles is None:
             raise ValueError("First read the profiles file")
+
+        program_names_key = f"[lib:{self.manufacturer}]"
         return [
             "_".join(cfg.split("_")[1:-2])
-            for cfg, active in self.profiles.config[
-                f"[lib:{self.manufacturer}]"
-            ].items()
+            for cfg, active in self.profiles.get_section(program_names_key).items()
             if active
         ]
 
     def program_name2registry_name(self, program):
-        for k in self.profiles.config[f"[lib:{self.manufacturer}]"]:
+        assert self.profiles
+        for k in self.profiles.get_section(f"[lib:{self.manufacturer}]"):
             profile_entry = "_".join(k.split("_")[1:-2])
             if profile_entry == program:
                 return k
@@ -81,23 +82,27 @@ class Repository:
 
 class Program:
 
+    program_path: Path
+    # manufacturer: str
+    name: str
+
     def __init__(
         self, registry: "ConfigFile", root: Path, manufacturer: str, region: str
     ):
         self.registry: ConfigFile = registry
         self.root: Path = root
-        self.name: str = self.registry["program"]
+        self.name: str = self.registry.get_string("program")
         self.manufacturer = manufacturer
         self.region = region
         self.program_path = self.root / self.manufacturer / self.name
         self.paths = {
             "ocd": (
-                self.root / self.registry["productdb_path"]
+                self.root / self.registry.get_string("productdb_path")
                 if self.contains_ofml_part("ocd")
                 else None
             ),
             "oam": (
-                self.root / self.registry["oam_path"]
+                self.root / self.registry.get_string("oam_path")
                 if self.contains_ofml_part("oam")
                 else None
             ),
@@ -174,7 +179,7 @@ class Program:
 
     def all_tables(self):
         tables = []
-        if self.is_ofml_part_available("ocd"):
+        if isinstance(self.ocd, OFMLPart):
             tables.extend(
                 [
                     table
@@ -182,7 +187,7 @@ class Program:
                     if isinstance(table, Table)
                 ]
             )
-        if self.is_ofml_part_available("oas"):
+        if isinstance(self.oas, OFMLPart):
             tables.extend(
                 [
                     table
@@ -190,7 +195,7 @@ class Program:
                     if isinstance(table, Table)
                 ]
             )
-        if self.is_ofml_part_available("oam"):
+        if isinstance(self.oam, OFMLPart):
             tables.extend(
                 [
                     table
@@ -198,11 +203,11 @@ class Program:
                     if isinstance(table, Table)
                 ]
             )
-        if self.is_ofml_part_available("go"):
+        if isinstance(self.go, OFMLPart):
             tables.extend(
                 [table for table in self.go.tables.values() if isinstance(table, Table)]
             )
-        if self.is_ofml_part_available("oap"):
+        if isinstance(self.oap, OFMLPart):
             tables.extend(
                 [
                     table
@@ -210,7 +215,7 @@ class Program:
                     if isinstance(table, Table)
                 ]
             )
-        if self.is_ofml_part_available("odb"):
+        if isinstance(self.odb, OFMLPart):
             tables.extend(
                 [
                     table
@@ -220,35 +225,41 @@ class Program:
             )
         return tables
 
-    def load_ofml_part(self, ofml_part: str, *args, **kwargs) -> "OFMLPart":
-        return {
+    def load_ofml_part(
+        self, ofml_part: str, *args: Sequence[Any], **kwargs: dict[str, Any]
+    ) -> "OFMLPart":
+        result_map: dict[str, Callable] = {
             "ocd": self.__load_ocd,
             "oam": self.__load_oam,
             "go": self.__load_go,
             "oap": self.__load_oap,
             "oas": self.__load_oas,
             "odb": self.__load_odb,
-        }[ofml_part](*args, **kwargs)
+        }
+        f = result_map[ofml_part]
+        return f(*args, **kwargs)
 
-    def contains_ofml_part(self, ofml_part: str, *args, **kwargs) -> bool:
-        return {
+    def contains_ofml_part(self, ofml_part: str) -> bool:
+        f = {
             "ocd": self.__contains_ocd,
             "oam": self.__contains_oam,
             "go": self.__contains_go,
             "oap": self.__contains_oap,
             "oas": self.__contains_oas,
             "odb": self.__contains_odb,
-        }[ofml_part](*args, **kwargs)
+        }[ofml_part]
+        return f()
 
-    def is_ofml_part_available(self, ofml_part: str, *args, **kwargs) -> bool:
-        return {
+    def is_ofml_part_available(self, ofml_part: str) -> bool:
+        f = {
             "ocd": self.__is_ocd_available,
             "oam": self.__is_oam_available,
             "go": self.__is_go_available,
             "oap": self.__is_oap_available,
             "oas": self.__is_oas_available,
             "odb": self.__is_odb_available,
-        }[ofml_part](*args, **kwargs)
+        }[ofml_part]
+        return f()
 
     def load_all_ofml_parts(self):
         for part in self.parts:
@@ -296,21 +307,25 @@ class Program:
         ]
 
     def __load_ocd(self):
+        assert self.paths["ocd"]
         return self._read_ofml_part(
             ofml_part="ocd", inp_descr=self.paths["ocd"] / "pdata.inp_descr", name="ocd"
         )
 
     def __load_oam(self):
+        assert self.paths["oam"]
         return self._read_ofml_part(
             ofml_part="oam", inp_descr=self.paths["oam"] / "oam.inp_descr", name="oam"
         )
 
     def __load_odb(self):
+        assert self.paths["odb"]
         return self._read_ofml_part(
             ofml_part="odb", inp_descr=self.paths["odb"] / "odb.inp_descr", name="odb"
         )
 
     def __load_go(self, languages=["de", "en", "fr", "nl"]):
+        assert self.paths["go"]
         ofml_part = self._read_ofml_part(
             ofml_part="go", inp_descr=self.paths["go"] / "mt.inp_descr", name="go"
         )
@@ -325,6 +340,7 @@ class Program:
         return ofml_part
 
     def __load_oap(self):
+        assert self.paths["oap"]
         return self._read_ofml_part(
             ofml_part="oap", inp_descr=self.paths["oap"] / "oap.inp_descr", name="oap"
         )
@@ -396,7 +412,7 @@ class Program:
     def featured_ofml_parts(self):
         return [_ for _, v in self.ofml_parts().items() if v["features"] is True]
 
-    def _read_ofml_part(self, **kwargs) -> "OFMLPart":
+    def _read_ofml_part(self, **kwargs) -> "OFMLPart | NotAvailable":
 
         inp_descr = kwargs.get("inp_descr", None)
         tables_definitions = kwargs.get("tables_definitions", None)
@@ -404,23 +420,24 @@ class Program:
         assert inp_descr is None or tables_definitions is None
         assert inp_descr is not None or tables_definitions is not None
 
-        ofml_part = kwargs["ofml_part"]
+        ofml_part_name = kwargs["ofml_part"]
 
         if inp_descr:
-            self.__setattr__(
-                ofml_part, OFMLPart.from_inp_descr(inp_descr, kwargs["name"])
-            )
+            ofml_part = OFMLPart.from_inp_descr(inp_descr, kwargs["name"])
+            self.__setattr__(ofml_part_name, ofml_part)
+            return ofml_part
 
         else:
             path = kwargs["path"]
+            ofml_part = OFMLPart.from_tables_definitions(
+                tables_definitions, path, kwargs["name"]
+            )
             self.__setattr__(
+                ofml_part_name,
                 ofml_part,
-                OFMLPart.from_tables_definitions(
-                    tables_definitions, path, kwargs["name"]
-                ),
             )
 
-        return self.__getattribute__(ofml_part)
+            return ofml_part
 
     def __str__(self):
         return f"Program(name={self.name}, ofml_parth={self.ofml_parts()})"
@@ -467,13 +484,26 @@ class ConfigFile(TimestampFile):
     def __getitem__(self, item):
         return self.config[item]
 
-    def get(self, *args, **kwargs) -> Optional[str]:
-        return self.config.get(*args, **kwargs)
+    def get(self, key: str, default=None) -> str | dict[str, Any] | None:
+        value = self.config.get(key)
+        return value or default
+
+    def get_string(self, key: str, default: str | None = None):
+        entry = self.config.get(key)
+        result = entry or default
+        assert isinstance(result, str)
+        return result
+
+    def get_section(self, key: str, default: dict[str, str] | None = None):
+        entry = self.config.get(key)
+        result = entry or default
+        assert isinstance(result, dict)
+        return result
 
     def read(self):
         with open(self.path, encoding="cp1252") as f:
             section = None
-            d = OrderedDict()
+            d = OrderedDict[str, str | dict[str, str]]()
             for _ in f.readlines():
                 _ = _.strip()
                 if not _ or _.isspace() or _.startswith("#"):
@@ -487,7 +517,11 @@ class ConfigFile(TimestampFile):
                     k = k.strip()
                     v = v.strip()
                     if section:
-                        d[section][k] = v
+                        section_dict = d[section]
+                        assert isinstance(
+                            section_dict, dict
+                        ), f"In section state {section} but section_dict was str"
+                        section_dict[k] = v
                     else:
                         d[k] = v
         return d
@@ -521,7 +555,7 @@ class OFMLPart:
     """
 
     @staticmethod
-    def from_inp_descr(inp_descr_path, name):
+    def from_inp_descr(inp_descr_path, name) -> "OFMLPart | NotAvailable":
         tables_definitions = read_pdata_inp_descr(inp_descr_path)
         if isinstance(tables_definitions, NotAvailable):
             return tables_definitions
@@ -566,7 +600,7 @@ class OFMLPart:
         table_path = self.path / filename
         dtypes = {_[0]: _[1] for _ in zip(columns, dtypes)}
         table = re.sub(r"\..+$", "", filename)
-        quoting = csv.QUOTE_MINIMAL
+        quoting: Any = csv.QUOTE_MINIMAL
         # most tables we can remove the enclosing " but not in these
         if table in {"funcs", "odb2d", "odb3d"}:
             quoting = csv.QUOTE_NONE
@@ -592,15 +626,23 @@ class OFMLPart:
         return self.table(item)
 
 
+
 def read_table(
-    filepath, names, dtype, encoding, ofml_part_name, sep=";", quoting=csv.QUOTE_MINIMAL
+    filepath,
+    names,
+    dtype,
+    encoding,
+    ofml_part_name,
+    sep=";",
+    quoting: Literal[0, 1, 2, 3, 4, 5] = csv.QUOTE_MINIMAL,
+    throwReadError: bool = False,
 ):
     """
     given a filepath and the names from inp_descr read any table
     """
-    from pandas._libs.parsers import STR_NA_VALUES
+    from pandas._libs.parsers import STR_NA_VALUES  # type: ignore
 
-    na_values = STR_NA_VALUES - {"None"}
+    na_values = list(STR_NA_VALUES - {"None"})
 
     on_bad_lines = "warn"  # warn, skip, error
     try:
@@ -625,7 +667,10 @@ def read_table(
         ValueError,
         FileNotFoundError,
     ) as e:
-        return NotAvailable(e)
+        if throwReadError:
+            raise e
+        else:
+            return NotAvailable(e)
     # map changes dtype of column to object
     # for now ok because object = string but not good
     df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
@@ -641,8 +686,9 @@ def ofml_dtype_2_pandas_dtype(ofml_dtype):
 
 @catch_file_exception
 def read_pdata_inp_descr(file_name):
-    result = OrderedDict()
+    result = OrderedDict[str, tuple[list[Any], list[Any], str]]()
     inside_comment = False
+    table_name = None
     with open(file_name, "r", encoding="cp1252") as file:
         for line in file:
 
@@ -662,13 +708,19 @@ def read_pdata_inp_descr(file_name):
 
             if row[0] == "table":
                 table_name = row[2]
-                result[table_name] = [[], [], ";"]
+                result[table_name] = ([], [], ";")
             elif row[0] == "field":
+                if table_name is None:
+                    raise ValueError(f"Encountered field before table: {row}")
                 field_name = row[2]
                 datatype = row[3]
                 datatype = ofml_dtype_2_pandas_dtype(datatype)
                 delimiter = row[5] if len(row) >= 6 and row[4] == "delim" else ";"
                 result[table_name][0].append(field_name)
                 result[table_name][1].append(datatype)
-                result[table_name][2] = delimiter
+                result[table_name] = (
+                    result[table_name][0],
+                    result[table_name][1],
+                    delimiter,
+                )
     return result

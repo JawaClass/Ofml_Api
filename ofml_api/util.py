@@ -1,4 +1,3 @@
-
 def catch_file_exception(f):
     def wrapper(*args, **kwargs):
         try:
@@ -16,4 +15,4 @@ class NotAvailable:
         self.error = error
 
     def __repr__(self):
-        return f"NotAvailable({self.error})"
+        return f"NotAvailable ({self.error})"

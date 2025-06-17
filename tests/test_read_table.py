@@ -1,4 +1,4 @@
-from ofml_api.repository import read_table
+from ofml_api.repository import Table, read_table
 from config import ROOT_PATH
 
 
@@ -25,7 +25,10 @@ def read_with_none_in_column():
         },
         encoding="utf8",
         ofml_part_name="oap",
+        throwReadError=True,
     )
+
+    assert table is Table
 
     assert (
         table.df["state_restr"].values.tolist()

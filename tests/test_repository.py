@@ -2,7 +2,7 @@ from pathlib import Path
 import time
 from ofml_api.repository import Repository, Program, OFMLPart, NotAvailable, Table
 from pprint import pprint
-import pandas as pd
+import pandas as pd  # type:ignore
 
 # REPO_ROOT = Path(r"b:Testumgebung/EasternGraphics")
 REPO_ROOT = Path(r"/mnt/knps_testumgebung/Testumgebung/EasternGraphics")
@@ -35,8 +35,11 @@ def test_table_not_available():
     repo = Repository(root=REPO_ROOT, manufacturer="kn")
     repo.read_profiles()
     program = repo.load_program("talos")
-    program.load_ofml_part("ocd")
-    table = program.ocd.read_table("NOT_AVAILABLE_TABLE_NAME")
+    assert (
+        type(program) is Program
+    ), f"Program expected to be of type program but was {program}"
+    ocd = program.load_ofml_part("ocd")
+    table = ocd.read_table("NOT_AVAILABLE_TABLE_NAME")
     assert isinstance(table, NotAvailable)
 
 
@@ -58,4 +61,6 @@ def test_load_all():
     table = talos.ocd.read_table("ocd_article222.csv")
     assert isinstance(table, NotAvailable)
     assert len(talos.ocd.tables) == 1
-    assert isinstance(talos.ocd.table("ocd_article").df, pd.DataFrame)
+    table = talos.ocd.table("ocd_article")
+    assert isinstance(table, Table)
+    assert isinstance(table.df, pd.DataFrame)
