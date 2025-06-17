@@ -2,7 +2,7 @@ from setuptools import setup  # type:ignore
 
 setup(
     name="ofml_api",
-    version="1.0.6",
+    version="1.0.7",
     author="Fabian Grünwald",
     author_email="fabian.gruenwald@koenig-neurath.de",
     packages=["ofml_api"],
