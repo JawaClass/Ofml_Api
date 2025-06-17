@@ -188,47 +188,27 @@ class Program:
         tables: list[Table] = []
         if isinstance(self.ocd, OFMLPart):
             tables.extend(
-                [
-                    table
-                    for table in self.ocd.tables.values()
-                    if isinstance(table, Table)
-                ]
+                [table for table in self.ocd.tables if isinstance(table, Table)]
             )
         if isinstance(self.oas, OFMLPart):
             tables.extend(
-                [
-                    table
-                    for table in self.oas.tables.values()
-                    if isinstance(table, Table)
-                ]
+                [table for table in self.oas.tables if isinstance(table, Table)]
             )
         if isinstance(self.oam, OFMLPart):
             tables.extend(
-                [
-                    table
-                    for table in self.oam.tables.values()
-                    if isinstance(table, Table)
-                ]
+                [table for table in self.oam.tables if isinstance(table, Table)]
             )
         if isinstance(self.go, OFMLPart):
             tables.extend(
-                [table for table in self.go.tables.values() if isinstance(table, Table)]
+                [table for table in self.go.tables if isinstance(table, Table)]
             )
         if isinstance(self.oap, OFMLPart):
             tables.extend(
-                [
-                    table
-                    for table in self.oap.tables.values()
-                    if isinstance(table, Table)
-                ]
+                [table for table in self.oap.tables if isinstance(table, Table)]
             )
         if isinstance(self.odb, OFMLPart):
             tables.extend(
-                [
-                    table
-                    for table in self.odb.tables.values()
-                    if isinstance(table, Table)
-                ]
+                [table for table in self.odb.tables if isinstance(table, Table)]
             )
         return tables
 
@@ -577,7 +557,11 @@ class OFMLPart:
         self.path: Path = kwargs["path"]
         self.name = kwargs["name"]
         self.tables_definitions = kwargs["tables_definitions"]
-        self.tables: Dict[str, Union[Table, NotAvailable]] = OrderedDict()
+        self.tables_dict: Dict[str, Union[Table, NotAvailable]] = OrderedDict()
+
+    @property
+    def tables(self):
+        return self.tables_dict.values()
 
     @property
     def filepaths_from_tables_definitions(self):
@@ -611,7 +595,7 @@ class OFMLPart:
         # most tables we can remove the enclosing " but not in these
         if table in {"funcs", "odb2d", "odb3d"}:
             quoting = csv.QUOTE_NONE
-        self.tables[table] = read_table(
+        self.tables_dict[table] = read_table(
             table_path,
             columns,
             dtypes,
@@ -620,11 +604,11 @@ class OFMLPart:
             quoting=quoting,
             ofml_part_name=self.name,
         )
-        return self.tables[table]
+        return self.tables_dict[table]
 
     def table(self, name: str) -> Union[Table, NotAvailable]:
         name = re.sub(r"\..+$", "", name)
-        return self.tables[name]
+        return self.tables_dict[name]
 
     def is_table_available(self, name: str):
         return type(self.table(name)) is not NotAvailable
