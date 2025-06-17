@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 import csv
 import os
 import re
@@ -25,7 +28,7 @@ class Repository:
     def programs_cached(self):
         return self.__programs.values()
 
-    def __getitem__(self, program) -> "Program":
+    def __getitem__(self, program) -> Program:
         return self.__programs[program]
 
     def read_profiles(self):
@@ -46,7 +49,7 @@ class Repository:
         program_name: str,
         keep_in_memory: bool = True,
         region: Optional[str] = None,
-    ) -> Union["Program", NotAvailable]:
+    ) -> Program | NotAvailable:
         reg = self.__read_registry(program_name)
 
         if isinstance(reg, NotAvailable):
@@ -179,8 +182,8 @@ class Program:
     def odb(self, value):
         self.parts["odb"] = value
 
-    def all_tables(self):
-        tables = []
+    def all_tables(self) -> list["Table"]:
+        tables: list[Table] = []
         if isinstance(self.ocd, OFMLPart):
             tables.extend(
                 [
@@ -229,7 +232,7 @@ class Program:
 
     def load_ofml_part(
         self, ofml_part: OFMLPartTypes, *args: Sequence[Any], **kwargs: dict[str, Any]
-    ) -> "OFMLPart":
+    ) -> OFMLPart:
         result_map: dict[str, Callable] = {
             "ocd": self.__load_ocd,
             "oam": self.__load_oam,
@@ -414,7 +417,7 @@ class Program:
     def featured_ofml_parts(self):
         return [_ for _, v in self.ofml_parts().items() if v["features"] is True]
 
-    def _read_ofml_part(self, **kwargs) -> "OFMLPart | NotAvailable":
+    def _read_ofml_part(self, **kwargs) -> OFMLPart | NotAvailable:
 
         inp_descr = kwargs.get("inp_descr", None)
         tables_definitions = kwargs.get("tables_definitions", None)
@@ -557,7 +560,7 @@ class OFMLPart:
     """
 
     @staticmethod
-    def from_inp_descr(inp_descr_path, name) -> "OFMLPart | NotAvailable":
+    def from_inp_descr(inp_descr_path, name) -> OFMLPart | NotAvailable:
         tables_definitions = read_pdata_inp_descr(inp_descr_path)
         if isinstance(tables_definitions, NotAvailable):
             return tables_definitions
