@@ -8,6 +8,8 @@ from typing import Any, Callable, Literal, Optional, Dict, Sequence, Union, over
 import pandas as pd  # type: ignore
 from ofml_api.util import NotAvailable, catch_file_exception
 
+type OFMLPartTypes = Literal["ocd", "oam", "go", "oap", "oas", "odb"]
+
 
 class Repository:
 
@@ -20,7 +22,7 @@ class Repository:
     def __str__(self):
         return f"Repository(root={self.root}, programs={self.__programs.items()})"
 
-    def programs(self):
+    def programs_cached(self):
         return self.__programs.values()
 
     def __getitem__(self, program) -> "Program":
@@ -95,7 +97,7 @@ class Program:
         self.manufacturer = manufacturer
         self.region = region
         self.program_path = self.root / self.manufacturer / self.name
-        self.paths = {
+        self.paths: dict[OFMLPartTypes, Path | None] = {
             "ocd": (
                 self.root / self.registry.get_string("productdb_path")
                 if self.contains_ofml_part("ocd")
@@ -120,7 +122,7 @@ class Program:
             "odb": self.program_path / "2" if self.contains_ofml_part("odb") else None,
         }
 
-        self.parts: Dict[str, Optional[OFMLPart]] = {
+        self.parts: Dict[OFMLPartTypes, OFMLPart | None] = {
             "ocd": None,
             "oam": None,
             "go": None,
@@ -226,7 +228,7 @@ class Program:
         return tables
 
     def load_ofml_part(
-        self, ofml_part: str, *args: Sequence[Any], **kwargs: dict[str, Any]
+        self, ofml_part: OFMLPartTypes, *args: Sequence[Any], **kwargs: dict[str, Any]
     ) -> "OFMLPart":
         result_map: dict[str, Callable] = {
             "ocd": self.__load_ocd,
@@ -239,7 +241,7 @@ class Program:
         f = result_map[ofml_part]
         return f(*args, **kwargs)
 
-    def contains_ofml_part(self, ofml_part: str) -> bool:
+    def contains_ofml_part(self, ofml_part: OFMLPartTypes) -> bool:
         f = {
             "ocd": self.__contains_ocd,
             "oam": self.__contains_oam,
@@ -624,7 +626,6 @@ class OFMLPart:
 
     def __getitem__(self, item):
         return self.table(item)
-
 
 
 def read_table(

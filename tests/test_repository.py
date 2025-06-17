@@ -14,9 +14,9 @@ def test_load_repo():
     repo.read_profiles()
     assert repo.profiles
     assert len(repo.program_names())
-    assert not len(repo.programs())
+    assert not len(repo.programs_cached())
     repo.load_program("talos")
-    assert len(repo.programs()) == 1
+    assert len(repo.programs_cached()) == 1
     talos = repo["talos"]
     assert isinstance(talos, Program)
     assert talos.contains_ofml_part("ocd")
