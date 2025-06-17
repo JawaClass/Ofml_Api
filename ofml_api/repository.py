@@ -561,8 +561,8 @@ class OFMLPart:
 
     @property
     def tables(self):
-        return  list(self.tables_dict.values())
-        return x
+        return list(self.tables_dict.values())
+
     @property
     def filepaths_from_tables_definitions(self):
         return {self.path / _ for _ in self.tables_definitions.keys()}

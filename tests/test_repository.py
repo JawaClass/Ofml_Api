@@ -64,3 +64,15 @@ def test_load_all():
     table = talos.ocd.table("ocd_article")
     assert isinstance(table, Table)
     assert isinstance(table.df, pd.DataFrame)
+
+
+def test_ofml_part():
+    repo = Repository(root=REPO_ROOT, manufacturer="kn")
+    repo.read_profiles()
+    repo.load_program("talos")
+    talos = repo["talos"]
+
+    ocd = talos.load_ofml_part("ocd")
+
+    assert isinstance(ocd.tables, list)
+    assert len(ocd.tables) == 0
