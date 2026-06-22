@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-
 import csv
+import datetime
 import os
 import re
-import datetime
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Dict, Sequence, Union, overload
-import pandas as pd  # type: ignore
-from ofml_api.util import NotAvailable, catch_file_exception
+from typing import Any, Callable, Dict, Literal, Optional, Sequence, Union
 
+import pandas as pd  # type: ignore
+
+from ofml_api.util import NotAvailable, catch_file_exception
 
 type OFMLPartTypes = Literal["ocd", "oam", "go", "oap", "oas", "odb"]
 OFML_PARTS: tuple[OFMLPartTypes, ...] = ("ocd", "oam", "go", "oap", "oas", "odb")
@@ -18,7 +18,7 @@ OFML_PARTS: tuple[OFMLPartTypes, ...] = ("ocd", "oam", "go", "oap", "oas", "odb"
 
 class Repository:
 
-    def __init__(self, root: Path, manufacturer: str):
+    def __init__(self, root: str | Path, manufacturer: str):
         self.root = root if isinstance(root, Path) else Path(root)
         self.manufacturer = manufacturer
         self.profiles = None
@@ -30,13 +30,13 @@ class Repository:
     def programs_cached(self):
         return self.__programs.values()
 
-    def __getitem__(self, program) -> Program:
+    def __getitem__(self, program: str) -> Program:
         return self.__programs[program]
 
     def read_profiles(self):
         self.profiles = ConfigFile(self.root / "profiles" / f"{self.manufacturer}.cfg")
 
-    def __read_registry(self, program):
+    def __read_registry(self, program: str):
         try:
             registry_name = self.program_name2registry_name(program)
             return ConfigFile(self.root / "registry" / f"{registry_name}.cfg")
@@ -78,7 +78,7 @@ class Repository:
             if active
         ]
 
-    def program_name2registry_name(self, program):
+    def program_name2registry_name(self, program: str):
         assert self.profiles
         for k in self.profiles.get_section(f"[lib:{self.manufacturer}]"):
             profile_entry = "_".join(k.split("_")[1:-2])
@@ -141,7 +141,7 @@ class Program:
         return self.parts["ocd"]
 
     @ocd.setter
-    def ocd(self, value):
+    def ocd(self, value: OFMLPart):
         self.parts["ocd"] = value
 
     @property
@@ -149,7 +149,7 @@ class Program:
         return self.parts["oam"]
 
     @oam.setter
-    def oam(self, value):
+    def oam(self, value: OFMLPart):
         self.parts["oam"] = value
 
     @property
@@ -157,7 +157,7 @@ class Program:
         return self.parts["go"]
 
     @go.setter
-    def go(self, value):
+    def go(self, value: OFMLPart):
         self.parts["go"] = value
 
     @property
@@ -165,7 +165,7 @@ class Program:
         return self.parts["oas"]
 
     @oas.setter
-    def oas(self, value):
+    def oas(self, value: OFMLPart):
         self.parts["oas"] = value
 
     @property
@@ -173,7 +173,7 @@ class Program:
         return self.parts["oap"]
 
     @oap.setter
-    def oap(self, value):
+    def oap(self, value: OFMLPart):
         self.parts["oap"] = value
 
     @property
@@ -181,7 +181,7 @@ class Program:
         return self.parts["odb"]
 
     @odb.setter
-    def odb(self, value):
+    def odb(self, value: OFMLPart):
         self.parts["odb"] = value
 
     def all_tables(self) -> list["Table"]:
@@ -214,8 +214,8 @@ class Program:
 
     def load_ofml_part(
         self, ofml_part: OFMLPartTypes, *args: Sequence[Any], **kwargs: dict[str, Any]
-    ) -> OFMLPart:
-        result_map: dict[str, Callable] = {
+    ) -> OFMLPart | NotAvailable:
+        result_map: dict[str, Callable[..., OFMLPart | NotAvailable]] = {
             "ocd": self.__load_ocd,
             "oam": self.__load_oam,
             "go": self.__load_go,
@@ -295,26 +295,29 @@ class Program:
 
     def __load_ocd(self):
         assert self.paths["ocd"]
-        return self._read_ofml_part(
-            ofml_part="ocd", inp_descr=self.paths["ocd"] / "pdata.inp_descr", name="ocd"
+        return self.read_ofml_part(
+            ofml_part_name="ocd",
+            inp_descr=self.paths["ocd"] / "pdata.inp_descr",
         )
 
     def __load_oam(self):
         assert self.paths["oam"]
-        return self._read_ofml_part(
-            ofml_part="oam", inp_descr=self.paths["oam"] / "oam.inp_descr", name="oam"
+        return self.read_ofml_part(
+            ofml_part_name="oam", inp_descr=self.paths["oam"] / "oam.inp_descr"
         )
 
     def __load_odb(self):
         assert self.paths["odb"]
-        return self._read_ofml_part(
-            ofml_part="odb", inp_descr=self.paths["odb"] / "odb.inp_descr", name="odb"
+        return self.read_ofml_part(
+            ofml_part_name="odb", inp_descr=self.paths["odb"] / "odb.inp_descr"
         )
 
-    def __load_go(self, languages=["de", "en", "fr", "nl"]):
+    def __load_go(self, languages: list[str] | None = None):
+        if languages is None:
+            languages = ["de", "en", "fr", "nl"]
         assert self.paths["go"]
-        ofml_part = self._read_ofml_part(
-            ofml_part="go", inp_descr=self.paths["go"] / "mt.inp_descr", name="go"
+        ofml_part = self.read_ofml_part(
+            ofml_part_name="go", inp_descr=self.paths["go"] / "mt.inp_descr"
         )
 
         if not isinstance(ofml_part, NotAvailable):
@@ -328,14 +331,14 @@ class Program:
 
     def __load_oap(self):
         assert self.paths["oap"]
-        return self._read_ofml_part(
-            ofml_part="oap", inp_descr=self.paths["oap"] / "oap.inp_descr", name="oap"
+        return self.read_ofml_part(
+            ofml_part_name="oap", inp_descr=self.paths["oap"] / "oap.inp_descr"
         )
 
     def __load_oas(self):
 
         path = self.paths["oas"]
-        tables_definitions = OrderedDict(
+        tables_definitions: dict[str, Any] = OrderedDict(  # type: ignore
             **{
                 "article.csv": [
                     ["name", "type", "param3", "param4", "param5", "param6", "program"],
@@ -377,14 +380,13 @@ class Program:
                     ["string", "string", "string", "string"],
                     ";",
                 ],
-            }
+            }  # type: ignore
         )
 
-        return self._read_ofml_part(
-            ofml_part="oas",
-            tables_definitions=tables_definitions,
+        return self.read_ofml_part(
+            ofml_part_name="oas",
+            tables_definitions=tables_definitions,  # type: ignore
             path=path,
-            name="oas",
         )
 
     def ofml_parts(self):
@@ -399,25 +401,30 @@ class Program:
     def featured_ofml_parts(self):
         return [_ for _, v in self.ofml_parts().items() if v["features"] is True]
 
-    def _read_ofml_part(self, **kwargs) -> OFMLPart | NotAvailable:
+    def read_ofml_part(
+        self,
+        ofml_part_name: str,
+        path: Path | None = None,
+        inp_descr: Path | None = None,
+        tables_definitions: Any | None = None,
+    ) -> OFMLPart | NotAvailable:
 
-        inp_descr = kwargs.get("inp_descr", None)
-        tables_definitions = kwargs.get("tables_definitions", None)
-
-        assert inp_descr is None or tables_definitions is None
-        assert inp_descr is not None or tables_definitions is not None
-
-        ofml_part_name = kwargs["ofml_part"]
+        assert (
+            inp_descr is None or tables_definitions is None
+        ), "accept only one of inp_descr or tables_definitions"
+        assert (
+            inp_descr is not None or tables_definitions is not None
+        ), "inp_descr or tables_definitions missing"
 
         if inp_descr:
-            ofml_part = OFMLPart.from_inp_descr(inp_descr, kwargs["name"])
+            ofml_part = OFMLPart.from_inp_descr(inp_descr, ofml_part_name)
             self.__setattr__(ofml_part_name, ofml_part)
             return ofml_part
 
         else:
-            path = kwargs["path"]
+            assert path, "when reading from table defintion"
             ofml_part = OFMLPart.from_tables_definitions(
-                tables_definitions, path, kwargs["name"]
+                tables_definitions, path, ofml_part_name
             )
             self.__setattr__(
                 ofml_part_name,
@@ -435,7 +442,7 @@ class Program:
 
 class TimestampFile:
 
-    def __init__(self, path):
+    def __init__(self, path: Path):
         self.path = path
         self._file_attributes = os.stat(self.path)
         timestamp = datetime.datetime.now()
@@ -468,10 +475,10 @@ class ConfigFile(TimestampFile):
     def __iter__(self):
         return iter(self.config)
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: str):
         return self.config[item]
 
-    def get(self, key: str, default=None) -> str | dict[str, Any] | None:
+    def get(self, key: str, default: Any = None) -> str | dict[str, Any] | None:
         value = self.config.get(key)
         return value or default
 
@@ -500,7 +507,7 @@ class ConfigFile(TimestampFile):
                     d[section] = OrderedDict()
 
                 if re.match(".+=.+", _):
-                    k, v = _.split("=")
+                    k, v = _.split("=", maxsplit=1)
                     k = k.strip()
                     v = v.strip()
                     if section:
@@ -527,7 +534,7 @@ class Table(TimestampFile):
         else:
             self.database_table_name = re.sub(r"\..*$", "", self.name)
 
-    def database_column_type(self, column_name):
+    def database_column_type(self, column_name: str):
         dtype = str(self.df[column_name].dtype)
         return {
             "string": "varchar(255)",
@@ -542,7 +549,7 @@ class OFMLPart:
     """
 
     @staticmethod
-    def from_inp_descr(inp_descr_path, name) -> OFMLPart | NotAvailable:
+    def from_inp_descr(inp_descr_path: Path, name: str) -> OFMLPart | NotAvailable:
         tables_definitions = read_pdata_inp_descr(inp_descr_path)
         if isinstance(tables_definitions, NotAvailable):
             return tables_definitions
@@ -550,13 +557,13 @@ class OFMLPart:
         return OFMLPart(path=path, tables_definitions=tables_definitions, name=name)
 
     @staticmethod
-    def from_tables_definitions(tables_definitions, path, name):
+    def from_tables_definitions(tables_definitions: Any, path: Path, name: str):
         return OFMLPart(path=path, tables_definitions=tables_definitions, name=name)
 
-    def __init__(self, **kwargs):
-        self.path: Path = kwargs["path"]
-        self.name = kwargs["name"]
-        self.tables_definitions = kwargs["tables_definitions"]
+    def __init__(self, path: Path, name: str, tables_definitions: Any):
+        self.path = path
+        self.name = name
+        self.tables_definitions = tables_definitions
         self.tables_dict: Dict[str, Union[Table, NotAvailable]] = OrderedDict()
 
     @property
@@ -580,7 +587,7 @@ class OFMLPart:
             self.read_table(name)
 
     def read_table(
-        self, filename: str, encoding="cp1252"
+        self, filename: str, encoding: str = "cp1252"
     ) -> Union[Table, NotAvailable]:
         try:
             columns, dtypes, sep = self.tables_definitions[filename]
@@ -613,17 +620,17 @@ class OFMLPart:
     def is_table_available(self, name: str):
         return type(self.table(name)) is not NotAvailable
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: str):
         return self.table(item)
 
 
 def read_table(
-    filepath,
-    names,
-    dtype,
-    encoding,
-    ofml_part_name,
-    sep=";",
+    filepath: Path,
+    names: list[str],
+    dtype: Any,
+    encoding: str,
+    ofml_part_name: str,
+    sep: str = ";",
     quoting: Literal[0, 1, 2, 3, 4, 5] = csv.QUOTE_MINIMAL,
     throwReadError: bool = False,
 ):
@@ -632,11 +639,11 @@ def read_table(
     """
     from pandas._libs.parsers import STR_NA_VALUES  # type: ignore
 
-    na_values = list(STR_NA_VALUES - {"None"})
+    na_values = list(STR_NA_VALUES - {"None"})  # type: ignore
 
     on_bad_lines = "warn"  # warn, skip, error
     try:
-        df = pd.read_csv(
+        df = pd.read_csv(  # type: ignore
             filepath,
             sep=sep,
             header=None,
@@ -650,7 +657,7 @@ def read_table(
             # but is necessary for funcs otherwiese values "" get removed
             quoting=quoting,
             # read None string as None string
-            na_values=na_values,
+            na_values=na_values,  # type: ignore
             keep_default_na=False,
         )
     except (
@@ -663,11 +670,11 @@ def read_table(
             return NotAvailable(e)
     # map changes dtype of column to object
     # for now ok because object = string but not good
-    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)  # type: ignore
     return Table(df, filepath, ofml_part_name)
 
 
-def ofml_dtype_2_pandas_dtype(ofml_dtype):
+def ofml_dtype_2_pandas_dtype(ofml_dtype: str):
     ofml_dtype = str.lower(ofml_dtype)
     if "string" in ofml_dtype:
         return "string"
@@ -675,7 +682,7 @@ def ofml_dtype_2_pandas_dtype(ofml_dtype):
 
 
 @catch_file_exception
-def read_pdata_inp_descr(file_name):
+def read_pdata_inp_descr(file_name: Path):
     result = OrderedDict[str, tuple[list[Any], list[Any], str]]()
     inside_comment = False
     table_name = None

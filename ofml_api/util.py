@@ -1,5 +1,11 @@
-def catch_file_exception(f):
-    def wrapper(*args, **kwargs):
+from typing import Any, Callable
+import functools
+
+
+def catch_file_exception(f: Callable[..., Any]):
+
+    @functools.wraps(f)
+    def wrapper(*args: Any, **kwargs: Any):
         try:
             result = f(*args, **kwargs)
         except (OSError, IOError) as e:
@@ -11,7 +17,7 @@ def catch_file_exception(f):
 
 class NotAvailable:
 
-    def __init__(self, error):
+    def __init__(self, error: Exception):
         self.error = error
 
     def __repr__(self):
