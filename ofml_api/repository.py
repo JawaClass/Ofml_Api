@@ -67,15 +67,30 @@ class Repository:
             self.__programs[program_name] = program
         return program
 
-    def program_names(self):
+    def program_names(self, active_flag: Literal["true", "false", "both"] = "true"):
         if self.profiles is None:
             raise ValueError("First read the profiles file")
 
         program_names_key = f"[lib:{self.manufacturer}]"
+
+        def keep(active_flag_src: str) -> bool:
+            if active_flag == "both":
+                return True
+
+            if active_flag == "true" and active_flag_src == "true":
+                return True
+
+            if active_flag == "false" and active_flag_src == "false":
+                return True
+            
+            return False
+            
+        program_names = self.profiles.get_section(program_names_key).items() 
+
         return [
             "_".join(cfg.split("_")[1:-2])
-            for cfg, active in self.profiles.get_section(program_names_key).items()
-            if active
+            for cfg, active in program_names
+            if keep(active.strip().lower())
         ]
 
     def program_name2registry_name(self, program: str):
